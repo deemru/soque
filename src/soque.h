@@ -16,18 +16,14 @@ extern "C" {
 
     typedef struct SOQUE * SOQUE_HANDLE;
 
-    EXPORT_FUNCTION SOQUE_HANDLE SOQUE_CALL soque_open( int queue_size, int writers, int procers, int readers,
-        void * cb_arg,
-        soque_push_batch_cb push_cb,
-        soque_push_batch_cb proc_cb,
-        soque_push_batch_cb pop_cb );
-    EXPORT_FUNCTION int SOQUE_CALL soque_read_get( SOQUE_HANDLE sh );
-    EXPORT_FUNCTION int SOQUE_CALL soque_read_sync( SOQUE_HANDLE sh, int read_done );
-    EXPORT_FUNCTION int SOQUE_CALL soque_proc_get( SOQUE_HANDLE sh );
-    EXPORT_FUNCTION int SOQUE_CALL soque_proc_sync( SOQUE_HANDLE sh, int proc_done );
-    EXPORT_FUNCTION int SOQUE_CALL soque_write_get( SOQUE_HANDLE sh );
-    EXPORT_FUNCTION int SOQUE_CALL soque_write_sync( SOQUE_HANDLE sh, int write_done );
+    EXPORT_FUNCTION SOQUE_HANDLE SOQUE_CALL soque_open( int queue_size, int max_threads,
+                                                        void * cb_arg,
+                                                        soque_push_batch_cb push_cb,
+                                                        soque_push_batch_cb proc_cb,
+                                                        soque_push_batch_cb pop_cb );
     EXPORT_FUNCTION int SOQUE_CALL soque_push_batch( SOQUE_HANDLE sh, int push_count );
+    EXPORT_FUNCTION int SOQUE_CALL soque_proc_get( SOQUE_HANDLE sh );
+    EXPORT_FUNCTION int SOQUE_CALL soque_proc_sync( SOQUE_HANDLE sh, int proc_done );    
     EXPORT_FUNCTION int SOQUE_CALL soque_pop_batch( SOQUE_HANDLE sh, int pop_count );
     EXPORT_FUNCTION void SOQUE_CALL soque_close( SOQUE_HANDLE sh );
 
