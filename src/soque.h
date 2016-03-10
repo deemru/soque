@@ -11,7 +11,7 @@ extern "C" {
 #define SOQUE_CALL __fastcall
 
     typedef int ( SOQUE_CALL * soque_push_batch_cb )( void * cb_arg, int push_count );
-    typedef int ( SOQUE_CALL * soque_proc_batch_cb )( void * cb_arg, int proc_count );
+    typedef void ( SOQUE_CALL * soque_proc_batch_cb )( void * cb_arg, int pos, int proc_count );
     typedef int ( SOQUE_CALL * soque_pop_batch_cb )( void * cb_arg, int pop_count );
 
     typedef struct SOQUE * SOQUE_HANDLE;
@@ -19,8 +19,8 @@ extern "C" {
     EXPORT_FUNCTION SOQUE_HANDLE SOQUE_CALL soque_open( int queue_size, int max_threads,
                                                         void * cb_arg,
                                                         soque_push_batch_cb push_cb,
-                                                        soque_push_batch_cb proc_cb,
-                                                        soque_push_batch_cb pop_cb );
+                                                        soque_proc_batch_cb proc_cb,
+                                                        soque_pop_batch_cb pop_cb );
     EXPORT_FUNCTION int SOQUE_CALL soque_push_batch( SOQUE_HANDLE sh, int push_count );
     EXPORT_FUNCTION int SOQUE_CALL soque_proc_get( SOQUE_HANDLE sh );
     EXPORT_FUNCTION int SOQUE_CALL soque_proc_sync( SOQUE_HANDLE sh, int proc_done );    

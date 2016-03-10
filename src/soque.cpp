@@ -61,7 +61,7 @@ struct SOQUE
 
     static void penalty_yield()
     {
-#if 0
+#if 1
 #if defined _WIN32
         SwitchToThread();
 #else
@@ -107,8 +107,8 @@ struct SOQUE
         int threads,
         void * arg,
         soque_push_batch_cb push,
-        soque_push_batch_cb proc,
-        soque_push_batch_cb pop );
+        soque_proc_batch_cb proc,
+        soque_pop_batch_cb pop );
     int push_batch( int push_count );
     int proc_get();
     int proc_sync( int proc_done );
@@ -143,8 +143,8 @@ struct SOQUE
 
     void * cb_arg;
     soque_push_batch_cb push_cb;
-    soque_push_batch_cb proc_cb;
-    soque_push_batch_cb pop_cb;
+    soque_proc_batch_cb proc_cb;
+    soque_pop_batch_cb pop_cb;
 
     void * mem;
 
@@ -155,8 +155,8 @@ void SOQUE::init( int size,
                   int threads,
                   void * arg,
                   soque_push_batch_cb push,
-                  soque_push_batch_cb proc,
-                  soque_push_batch_cb pop )
+                  soque_proc_batch_cb proc,
+                  soque_pop_batch_cb pop )
 {
     memset( this, 0, sizeof( SOQUE ) + sizeof( MARKER ) * size );
     q_size = size;
@@ -356,8 +356,8 @@ SOQUE_HANDLE SOQUE_CALL soque_open( int queue_size,
                          int max_threads,
                          void * cb_arg,
                          soque_push_batch_cb push_cb,
-                         soque_push_batch_cb proc_cb,
-                         soque_push_batch_cb pop_cb )
+                         soque_proc_batch_cb proc_cb,
+                         soque_pop_batch_cb pop_cb )
 {
     void * mem = malloc( sizeof( SOQUE ) + sizeof( SOQUE::MARKER ) * queue_size + CACHELINE_SIZE );
 
@@ -487,6 +487,8 @@ struct SOQUE_THREADS
                     if( ( pos = soque_proc_get( sh ) ) == -1 )
                         break;
 
+                    sh->proc_cb( sh->cb_arg, pos, 1 );
+
                     soque_proc_sync( sh, pos );
 
                     if( ++batch == 256 )
@@ -584,32 +586,33 @@ static int SOQUE_CALL soque_cb( void * arg, int count )
     return count;
 }
 
+
+static void SOQUE_CALL soque_proc_cb( void * arg, int pos, int count )
+{
+    (void)arg;
+    (void)pos;
+    (void)count;
+}
+
 static soque_push_batch_cb push_cb = &soque_cb;
-static soque_push_batch_cb proc_cb = &soque_cb;
-static soque_push_batch_cb pop_cb = &soque_cb;
+static soque_proc_batch_cb proc_cb = &soque_proc_cb;
+static soque_pop_batch_cb pop_cb = &soque_cb;
 
 int main( int argc, char ** argv )
 {
-    int q_count = SOQUE_DEFAULT_Q_SIZE;
-    int w_count = 1;
-    int p_count = 1;
-    int r_count = 1;
+    int queue_size = SOQUE_DEFAULT_Q_SIZE;
+    int threads_count = 1;
 
-    if( argc == 6 )
+    if( argc == 4 )
     {
-        q_count = atoi( argv[1] );
-        w_count = atoi( argv[2] );
-        p_count = atoi( argv[3] );
-        r_count = atoi( argv[4] );
-        SOQUE_PENALTY = atoi( argv[5] );
+        queue_size = atoi( argv[1] );
+        threads_count = atoi( argv[2] );
+        SOQUE_PENALTY = atoi( argv[3] );
     }
 
-    printf( "q_count = %d\n", q_count );
-    printf( "w_count = %d\n", w_count );
-    printf( "p_count = %d\n", p_count );
-    printf( "r_count = %d\n", r_count );
-    printf( "SOQ_PENALTY = %d\n\n", SOQUE_PENALTY );
-
+    printf( "queue_size = %d\n", queue_size );
+    printf( "threads_count = %d\n", threads_count );
+    printf( "SOQUE_PENALTY = %d\n\n", SOQUE_PENALTY );
     
 #if 0
 
@@ -635,8 +638,8 @@ int main( int argc, char ** argv )
 #else
 
     SOQUE_HANDLE q[2];
-    q[0] = soque_open( q_count, p_count, NULL, push_cb, proc_cb, pop_cb );
-    q[1] = soque_open( q_count, p_count, NULL, push_cb, proc_cb, pop_cb );
+    q[0] = soque_open( queue_size, threads_count, NULL, push_cb, proc_cb, pop_cb );
+    q[1] = soque_open( queue_size, threads_count, NULL, push_cb, proc_cb, pop_cb );
 
 #endif
 
@@ -648,7 +651,7 @@ int main( int argc, char ** argv )
 
 
     SOQUE_THREADS_HANDLE sth;
-    sth = soque_threads_open( p_count, q, 2 );
+    sth = soque_threads_open( threads_count, q, 2 );
 
     std::this_thread::sleep_for( std::chrono::milliseconds( 1000 ) ); // warming
 
