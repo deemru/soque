@@ -276,7 +276,7 @@ int SOQUE::push_batch( int push_count )
         return push_max;
 
     if( push_count > push_max )
-        push_count = push_max;
+        push_count = push_max; // надо бы считать _fixed
 
     push_next = push_here + push_count;
 
@@ -472,6 +472,8 @@ struct SOQUE_THREADS
         std::this_thread::sleep_for( std::chrono::milliseconds( 100 ) );
 
         int i = 0;
+        int batch;
+        int batch_check;
 
         for( ; !sts->shutdown; )
         {
@@ -498,7 +500,6 @@ struct SOQUE_THREADS
 
             // pop + push
             {
-                int batch;
                 bool f = false;
 
                 if( sts->t[i].guard.compare_exchange_weak( f, true ) )
@@ -511,12 +512,9 @@ struct SOQUE_THREADS
 
                         if( batch )
                         {
-                            int check = soque_pop_batch( sh, batch );
+                            soque_pop_batch( sh, batch );
 
-                            assert( batch == check ); (void)check;
-
-                            if( batch )
-                                g_read_count += batch;
+                            g_read_count += batch;
                         }
                     }
 
@@ -528,9 +526,13 @@ struct SOQUE_THREADS
 
                         if( batch )
                         {
-                            int check = soque_push_batch( sh, batch );
+                            batch_check = soque_push_batch( sh, batch );
 
-                            assert( batch == check ); (void)check;
+                            if( batch_check != batch )
+                            {
+                                batch_check += soque_push_batch( sh, batch - batch_check );
+                                assert( batch_check == batch );
+                            }
                         }
                     }
 
