@@ -74,15 +74,16 @@ struct SOQUE
 
     static void penalty_rdtsc()
     {
-        unsigned long long now = rdtsc();
-        while( rdtsc() - now < SOQUE_PENALTY ){}
+        return;
+        //unsigned long long now = rdtsc();
+        //while( rdtsc() - now < SOQUE_PENALTY ){}
     }
 
     struct guard_proc
     {
         guard_proc( SOQUE * soque )
         {
-            if( soque->ps > 1 )
+            if( soque->proc_threads > 1 )
                 for( ;; )
                 {
                     bool f = false;
@@ -96,74 +97,57 @@ struct SOQUE
 
         ~guard_proc()
         {
-            if( soque_caller->ps > 1 )
+            if( soque_caller->proc_threads > 1 )
                 soque_caller->proc_lock = false;
         }
 
         SOQUE * soque_caller;
     };
 
-    void init( int size,
+    void open( int size,
         int threads,
         void * arg,
-        soque_push_batch_cb push,
-        soque_proc_batch_cb proc,
-        soque_pop_batch_cb pop );
-    int push_batch( int push_count );
-    int proc_get();
-    int proc_sync( int proc_done );
-    int pop_batch( int pop_count );
-    void cleanup();
+        soque_push_cb push,
+        soque_proc_cb proc,
+        soque_pop_cb pop );
+    int push( int push_count );
+    int proc_open( int proc_count, int * index );
+    int proc_done( int proc_count, int index );
+    int pop( int pop_count );
+    void done();
 
-#if 0
     CACHELINE_ALIGN( int push_fixed );
-    int pop_cached;
     CACHELINE_ALIGN( int proc_run );
-    int push_cached;
     CACHELINE_ALIGN( int proc_fixed );
     CACHELINE_ALIGN( int pop_fixed );
-    int proc_cached;
-#else
-    CACHELINE_ALIGN( int push_fixed );
-    CACHELINE_ALIGN( int pop_cached );
-    CACHELINE_ALIGN( int proc_run );
-    CACHELINE_ALIGN( int push_cached );
-    CACHELINE_ALIGN( int proc_fixed );
-    CACHELINE_ALIGN( int pop_fixed );
-    CACHELINE_ALIGN( int proc_cached );
-#endif
 
     CACHELINE_ALIGN( std::atomic_bool proc_lock );
 
     CACHELINE_ALIGN( int q_size );
-    int ps;
-    void ( * push_penalty )();
+    int proc_threads;
     void ( * proc_penalty )();
-    void ( * pop_penalty )();
 
     void * cb_arg;
-    soque_push_batch_cb push_cb;
-    soque_proc_batch_cb proc_cb;
-    soque_pop_batch_cb pop_cb;
+    soque_push_cb push_cb;
+    soque_proc_cb proc_cb;
+    soque_pop_cb pop_cb;
 
     void * mem;
 
     CACHELINE_ALIGN( MARKER markers[0] );
 };
 
-void SOQUE::init( int size,
+void SOQUE::open( int size,
                   int threads,
                   void * arg,
-                  soque_push_batch_cb push,
-                  soque_proc_batch_cb proc,
-                  soque_pop_batch_cb pop )
+                  soque_push_cb push,
+                  soque_proc_cb proc,
+                  soque_pop_cb pop )
 {
     memset( this, 0, sizeof( SOQUE ) + sizeof( MARKER ) * size );
     q_size = size;
-    ps = threads;
-    push_penalty = penalty_rdtsc;
-    proc_penalty = ps > (int)SOQUE_MAX_THREADS ? penalty_yield : penalty_rdtsc;
-    pop_penalty = penalty_rdtsc;
+    proc_threads = threads;
+    proc_penalty = proc_threads > (int)SOQUE_MAX_THREADS ? penalty_yield : penalty_rdtsc;
 
     cb_arg = arg;
     push_cb = push;
@@ -171,80 +155,12 @@ void SOQUE::init( int size,
     pop_cb = pop;
 }
 
-void SOQUE::cleanup()
+void SOQUE::done()
 {
 
 }
 
-int SOQUE::proc_get()
-{
-    int proc_here;
-    int proc_next;
-
-    for( ;; )
-    {
-        {
-            guard_proc gp( this );
-
-            proc_here = proc_run;
-
-            if( proc_here == push_cached )
-            {
-                if( proc_here == push_fixed )
-                    break;
-
-                push_cached = push_fixed;
-            }
-
-            proc_next = proc_here + 1;
-
-            if( proc_next == q_size )
-                proc_next = 0;
-
-            proc_run = proc_next;
-        }
-
-        assert( markers[proc_here].status == SOQUE_MARKER_FILLED );
-        return proc_here;
-    }
-
-    proc_penalty();
-    return -1;
-}
-
-int SOQUE::proc_sync( int proc_done )
-{
-    int proc_next;
-
-    guard_proc gp( this );
-
-    markers[proc_done].status = SOQUE_MARKER_PROCESSED;
-
-    if( proc_done != proc_fixed )
-        return 0;
-
-    proc_next = proc_done + 1;
-
-    for( ;; )
-    {
-        if( proc_next == q_size )
-            proc_next = 0;
-
-        if( proc_next == proc_run )
-            break;
-
-        if( markers[proc_next].status != SOQUE_MARKER_PROCESSED )
-            break;
-
-        proc_next = proc_next + 1;
-    }
-
-    proc_fixed = proc_next;
-
-    return 1;
-}
-
-int SOQUE::push_batch( int push_count )
+int SOQUE::push( int push_count )
 {
     int push_here;
     int push_next;
@@ -252,23 +168,13 @@ int SOQUE::push_batch( int push_count )
     int pop_max;
 
     push_here = push_fixed;
-    pop_max = pop_cached - 1;
+    pop_max = pop_fixed - 1;
 
     if( pop_max < push_here )
         pop_max += q_size;
 
     if( pop_max == push_here )
-    {
-        pop_cached = pop_fixed;
-
-        pop_max = pop_cached - 1;
-
-        if( pop_max < push_here )
-            pop_max += q_size;
-
-        if( pop_max == push_here )
-            return 0;
-    }
+        return 0;
 
     push_max = pop_max - push_here;
 
@@ -285,7 +191,7 @@ int SOQUE::push_batch( int push_count )
 
     for( int i = 0; i < push_count; i++ )
     {
-        if( push_here + i >= q_size )
+        if( push_here + i == q_size )
             push_here -= q_size;
 
         assert( markers[push_here + i].status == SOQUE_MARKER_EMPTY );
@@ -298,7 +204,100 @@ int SOQUE::push_batch( int push_count )
     return push_count;
 }
 
-int SOQUE::pop_batch( int pop_count )
+int SOQUE::proc_open( int proc_count, int * index )
+{
+    int proc_here;
+    int proc_next;
+    int proc_max;
+    int push_max;
+
+    {
+        guard_proc gp( this );
+
+        proc_here = proc_run;
+        push_max = push_fixed;
+
+        if( push_max < proc_here )
+            push_max += q_size;
+
+        if( push_max == proc_here )
+            return 0;
+
+        proc_max = push_max - proc_here;
+
+        if( proc_count == 0 )
+            return proc_max;
+
+        if( proc_count > proc_max )
+            proc_count = proc_max;
+
+        proc_next = proc_here + proc_count;
+
+        if( proc_next >= q_size )
+            proc_next -= q_size;
+
+        proc_run = proc_next;
+    }
+
+    *index = proc_here;
+    
+    for( int i = 0; i < proc_count; i++ )
+    {
+        if( proc_here + i == q_size )
+            proc_here -= q_size;
+
+        assert( markers[proc_here + i].status == SOQUE_MARKER_FILLED );
+    }
+
+    return proc_count;
+}
+
+
+int SOQUE::proc_done( int proc_count, int proc_done )
+{
+    int proc_here = proc_done;
+    int proc_next;
+
+    {
+        guard_proc gp( this );
+
+        for( int i = 0; i < proc_count; i++ )
+        {
+            if( proc_here + i == q_size )
+                proc_here -= q_size;
+
+            markers[proc_here + i].status = SOQUE_MARKER_PROCESSED;
+        }
+
+        if( proc_done != proc_fixed )
+            return 0;
+
+        proc_next = proc_done + proc_count;
+
+        if( proc_next >= q_size )
+            proc_next -= q_size;
+
+        for( ;; ) // +batch
+        {
+            if( proc_next == proc_run )
+                break;
+
+            if( markers[proc_next].status != SOQUE_MARKER_PROCESSED )
+                break;
+
+            proc_next = proc_next + 1;
+
+            if( proc_next == q_size )
+                proc_next = 0;
+        }
+
+        proc_fixed = proc_next;
+    }    
+
+    return 1;
+}
+
+int SOQUE::pop( int pop_count )
 {
     int pop_here;
     int pop_next;
@@ -306,23 +305,13 @@ int SOQUE::pop_batch( int pop_count )
     int proc_max;
 
     pop_here = pop_fixed;
-    proc_max = proc_cached;
+    proc_max = proc_fixed;
 
     if( proc_max < pop_here )
         proc_max += q_size;
 
     if( proc_max == pop_here )
-    {
-        proc_cached = proc_fixed;
-
-        proc_max = proc_cached;
-
-        if( proc_max < pop_here )
-            proc_max += q_size;
-
-        if( proc_max == pop_here )
-            return 0;
-    }
+        return 0;
 
     pop_max = proc_max - pop_here;
 
@@ -355,9 +344,9 @@ int SOQUE::pop_batch( int pop_count )
 SOQUE_HANDLE SOQUE_CALL soque_open( int queue_size,
                          int max_threads,
                          void * cb_arg,
-                         soque_push_batch_cb push_cb,
-                         soque_proc_batch_cb proc_cb,
-                         soque_pop_batch_cb pop_cb )
+                         soque_push_cb push_cb,
+                         soque_proc_cb proc_cb,
+                         soque_pop_cb pop_cb )
 {
     void * mem = malloc( sizeof( SOQUE ) + sizeof( SOQUE::MARKER ) * queue_size + CACHELINE_SIZE );
 
@@ -365,36 +354,36 @@ SOQUE_HANDLE SOQUE_CALL soque_open( int queue_size,
         return NULL;
 
     SOQUE_HANDLE sh = CACHELINE_SHIFT( mem, SOQUE_HANDLE );
-    sh->init( queue_size, max_threads, cb_arg, push_cb, proc_cb, pop_cb );
+    sh->open( queue_size, max_threads, cb_arg, push_cb, proc_cb, pop_cb );
     sh->mem = mem;
 
     return sh;
 }
 
-int SOQUE_CALL soque_push_batch( SOQUE_HANDLE sh, int push_count )
+int SOQUE_CALL soque_push( SOQUE_HANDLE sh, int push_count )
 {
-    return sh->push_batch( push_count );
+    return sh->push( push_count );
 }
 
-int SOQUE_CALL soque_proc_get( SOQUE_HANDLE sh )
+int SOQUE_CALL soque_proc_open( SOQUE_HANDLE sh, int proc_count, int * proc_index )
 {
-    return sh->proc_get();
+    return sh->proc_open( proc_count, proc_index );
 }
 
-int SOQUE_CALL soque_proc_sync( SOQUE_HANDLE sh, int proc_done )
+int SOQUE_CALL soque_proc_done( SOQUE_HANDLE sh, int proc_count, int proc_index )
 {
-    return sh->proc_sync( proc_done );
+    return sh->proc_done( proc_count, proc_index );
 }
 
-int SOQUE_CALL soque_pop_batch( SOQUE_HANDLE sh, int pop_count )
+int SOQUE_CALL soque_pop( SOQUE_HANDLE sh, int pop_count )
 {
-    return sh->pop_batch( pop_count );
+    return sh->pop( pop_count );
 }
 
-void SOQUE_CALL soque_close( SOQUE_HANDLE sh )
+void SOQUE_CALL soque_done( SOQUE_HANDLE sh )
 {
     void * mem = sh->mem;
-    sh->cleanup();
+    sh->done();
     free( mem );
 }
 
@@ -459,7 +448,7 @@ struct SOQUE_THREADS
         }
 
         for( int i = 0; i < threads_count; i++ )
-            vt.push_back( std::thread( &soque_thread, this ) );
+            vt.push_back( std::thread( &soque_thread, this, i ) );
 
         for( int i = 0; i < threads_count; i++ )
             sit_on_cpu( vt[i] );
@@ -467,81 +456,110 @@ struct SOQUE_THREADS
         return 1;
     }
 
-    static void soque_thread( SOQUE_THREADS * sts )
+    static void soque_thread( SOQUE_THREADS * sts, int thread_id )
     {
         std::this_thread::sleep_for( std::chrono::milliseconds( 100 ) );
 
         int i = 0;
+        int pos;
         int batch;
         int batch_check;
+        int nowork = 1;
+        int max_batch = 16;
 
         for( ; !sts->shutdown; )
         {
             SOQUE_HANDLE sh = sts->t[i].sh;
 
-            // proc
+            // ... pop > push > proc ...
+            if( i == thread_id )
+            for( ;; )
             {
-                int pos;
-                int batch = 0;
+                batch = soque_pop( sh, 0 );
+
+                if( batch )
+                {
+                    batch = sh->pop_cb( sh->cb_arg, batch, 0 );
+
+                    if( batch )
+                    {
+                        soque_pop( sh, batch );
+
+                        g_read_count += batch;
+                    }
+
+                    nowork = 0;
+                }
+
+                batch = soque_push( sh, 0 );
+
+                if( batch )
+                {
+                    batch = sh->push_cb( sh->cb_arg, batch, nowork > 8 );
+
+                    if( batch )
+                    {
+                        batch_check = soque_push( sh, batch );
+
+                        if( batch_check != batch )
+                        {
+                            batch_check += soque_push( sh, batch - batch_check );
+                            assert( batch_check == batch );
+                        }
+
+                        nowork = 0;
+                    }
+                }
+
+                batch = 0;
 
                 for( ;; )
                 {
-                    if( ( pos = soque_proc_get( sh ) ) == -1 )
+                    if( 0 == ( batch = soque_proc_open( sh, max_batch, &pos ) ) )
                         break;
 
-                    sh->proc_cb( sh->cb_arg, pos, 1 );
+                    sh->proc_cb( sh->cb_arg, batch, pos );
 
-                    soque_proc_sync( sh, pos );
+                    soque_proc_done( sh, batch, pos );
+                    nowork = 0;
 
-                    if( ++batch == 256 )
+                    if( batch == max_batch )
                         break;
                 }
+
+                if( batch )
+                    continue;
+
+                break;
             }
-
-            // pop + push
+            else
+            // proc only
             {
-                bool f = false;
+                batch = 0;
 
-                if( sts->t[i].guard.compare_exchange_weak( f, true ) )
+                for( ;; )
                 {
-                    batch = soque_pop_batch( sh, 0 );
-                    
-                    if( batch )
-                    {
-                        batch = sh->pop_cb( sh->cb_arg, batch );
+                    if( 0 == ( batch = soque_proc_open( sh, max_batch, &pos ) ) )
+                        break;
 
-                        if( batch )
-                        {
-                            soque_pop_batch( sh, batch );
+                    sh->proc_cb( sh->cb_arg, batch, pos );
 
-                            g_read_count += batch;
-                        }
-                    }
+                    soque_proc_done( sh, batch, pos );
+                    nowork = 0;
 
-                    batch = soque_push_batch( sh, 0 );
-
-                    if( batch )
-                    {
-                        batch = sh->push_cb( sh->cb_arg, batch );
-
-                        if( batch )
-                        {
-                            batch_check = soque_push_batch( sh, batch );
-
-                            if( batch_check != batch )
-                            {
-                                batch_check += soque_push_batch( sh, batch - batch_check );
-                                assert( batch_check == batch );
-                            }
-                        }
-                    }
-
-                    sts->t[i].guard = false;
+                    if( batch == max_batch )
+                        break;
                 }
             }
 
             if( ++i == sts->soques_count )
+            {
                 i = 0;
+                if( ++nowork > 8 )
+                {
+                    std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
+                }
+            }
         }
     }
 
@@ -575,30 +593,31 @@ SOQUE_THREADS_HANDLE SOQUE_CALL soque_threads_open( int threads_count, SOQUE_HAN
     return sth;
 }
 
-void SOQUE_CALL soque_threads_close( SOQUE_THREADS_HANDLE sth )
+void SOQUE_CALL soque_threads_done( SOQUE_THREADS_HANDLE sth )
 {
     sth->cleanup();
     free( sth );
 }
 
-static int SOQUE_CALL soque_cb( void * arg, int count )
+static int SOQUE_CALL empty_soque_cb( void * arg, int count, int waitable )
 {
     (void)arg;
+    (void)waitable;
 
     return count;
 }
 
 
-static void SOQUE_CALL soque_proc_cb( void * arg, int pos, int count )
+static void SOQUE_CALL empty_soque_proc_cb( void * arg, int pos, int count )
 {
     (void)arg;
     (void)pos;
     (void)count;
 }
 
-static soque_push_batch_cb push_cb = &soque_cb;
-static soque_proc_batch_cb proc_cb = &soque_proc_cb;
-static soque_pop_batch_cb pop_cb = &soque_cb;
+static soque_push_cb push_cb = &empty_soque_cb;
+static soque_proc_cb proc_cb = &empty_soque_proc_cb;
+static soque_pop_cb pop_cb = &empty_soque_cb;
 
 int main( int argc, char ** argv )
 {

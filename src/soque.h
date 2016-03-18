@@ -2,35 +2,31 @@
 extern "C" {
 #endif
 
-#ifdef WIN32
-#define EXPORT_FUNCTION __declspec( dllexport )
+#ifdef _WIN32
+#define SOQUE_API __declspec( dllexport )
 #else
-#define EXPORT_FUNCTION __attribute__( ( visibility( "default" ) ) )
+#define SOQUE_API __attribute__( ( visibility( "default" ) ) )
 #endif
 
 #define SOQUE_CALL __fastcall
 
-    typedef int ( SOQUE_CALL * soque_push_batch_cb )( void * cb_arg, int push_count );
-    typedef void ( SOQUE_CALL * soque_proc_batch_cb )( void * cb_arg, int pos, int proc_count );
-    typedef int ( SOQUE_CALL * soque_pop_batch_cb )( void * cb_arg, int pop_count );
+    typedef int ( SOQUE_CALL * soque_push_cb )( void * cb_arg, int push_count, int waitable );
+    typedef void ( SOQUE_CALL * soque_proc_cb )( void * cb_arg, int proc_count, int proc_index );
+    typedef int ( SOQUE_CALL * soque_pop_cb )( void * cb_arg, int pop_count, int waitable );
 
     typedef struct SOQUE * SOQUE_HANDLE;
 
-    EXPORT_FUNCTION SOQUE_HANDLE SOQUE_CALL soque_open( int queue_size, int max_threads,
-                                                        void * cb_arg,
-                                                        soque_push_batch_cb push_cb,
-                                                        soque_proc_batch_cb proc_cb,
-                                                        soque_pop_batch_cb pop_cb );
-    EXPORT_FUNCTION int SOQUE_CALL soque_push_batch( SOQUE_HANDLE sh, int push_count );
-    EXPORT_FUNCTION int SOQUE_CALL soque_proc_get( SOQUE_HANDLE sh );
-    EXPORT_FUNCTION int SOQUE_CALL soque_proc_sync( SOQUE_HANDLE sh, int proc_done );    
-    EXPORT_FUNCTION int SOQUE_CALL soque_pop_batch( SOQUE_HANDLE sh, int pop_count );
-    EXPORT_FUNCTION void SOQUE_CALL soque_close( SOQUE_HANDLE sh );
+    SOQUE_API SOQUE_HANDLE SOQUE_CALL soque_open( int size, int threads, void * cb_arg, soque_push_cb, soque_proc_cb, soque_pop_cb );
+    SOQUE_API int SOQUE_CALL soque_push( SOQUE_HANDLE sh, int push_count );
+    SOQUE_API int SOQUE_CALL soque_proc_open( SOQUE_HANDLE sh, int proc_count, int * proc_index );
+    SOQUE_API int SOQUE_CALL soque_proc_done( SOQUE_HANDLE sh, int proc_count, int proc_index );
+    SOQUE_API int SOQUE_CALL soque_pop( SOQUE_HANDLE sh, int pop_count );
+    SOQUE_API void SOQUE_CALL soque_done( SOQUE_HANDLE sh );
 
     typedef struct SOQUE_THREADS * SOQUE_THREADS_HANDLE;
 
-    EXPORT_FUNCTION SOQUE_THREADS_HANDLE SOQUE_CALL soque_threads_open( int threads_count, SOQUE_HANDLE * shs, int shs_count );
-    EXPORT_FUNCTION void SOQUE_CALL soque_threads_close( SOQUE_THREADS_HANDLE sth );
+    SOQUE_API SOQUE_THREADS_HANDLE SOQUE_CALL soque_threads_open( int threads_count, SOQUE_HANDLE * shs, int shs_count );
+    SOQUE_API void SOQUE_CALL soque_threads_done( SOQUE_THREADS_HANDLE sth );
 
 #ifdef __cplusplus
 }
