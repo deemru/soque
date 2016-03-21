@@ -4,11 +4,11 @@ extern "C" {
 
 #ifdef _WIN32
 #define SOQUE_API __declspec( dllexport )
+#define SOQUE_CALL __fastcall
 #else
 #define SOQUE_API __attribute__( ( visibility( "default" ) ) )
+#define SOQUE_CALL 
 #endif
-
-#define SOQUE_CALL __fastcall
 
     typedef int ( SOQUE_CALL * soque_push_cb )( void * cb_arg, int push_count, int waitable );
     typedef void ( SOQUE_CALL * soque_proc_cb )( void * cb_arg, int proc_count, int proc_index );
@@ -25,7 +25,7 @@ extern "C" {
 
     typedef struct SOQUE_THREADS * SOQUE_THREADS_HANDLE;
 
-    SOQUE_API SOQUE_THREADS_HANDLE SOQUE_CALL soque_threads_open( int threads_count, SOQUE_HANDLE * shs, int shs_count );
+    SOQUE_API SOQUE_THREADS_HANDLE SOQUE_CALL soque_threads_open( int threads, SOQUE_HANDLE * shs, int shs_count );
     SOQUE_API void SOQUE_CALL soque_threads_done( SOQUE_THREADS_HANDLE sth );
 
 #ifdef __cplusplus

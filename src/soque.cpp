@@ -74,9 +74,8 @@ struct SOQUE
 
     static void penalty_rdtsc()
     {
-        return;
-        //unsigned long long now = rdtsc();
-        //while( rdtsc() - now < SOQUE_PENALTY ){}
+        unsigned long long now = rdtsc();
+        while( rdtsc() - now < SOQUE_PENALTY ){}
     }
 
     struct guard_proc
@@ -396,11 +395,15 @@ struct SOQUE_THREAD
     CACHELINE_ALIGN( char aligner[0] );
 };
 
+
+
 struct SOQUE_THREADS
 {
     int shutdown;
     int threads_count;
     int soques_count;
+    int wait;
+    int wait_signal;
     void * mem;
     SOQUE_THREAD * t;
     std::vector<std::thread> vt;
@@ -433,6 +436,8 @@ struct SOQUE_THREADS
         memset( this, 0, sizeof( SOQUE_THREADS ) );
         threads_count = t_count;
         soques_count = sh_count;
+        wait = 0;
+        wait_signal = 1;
 
         mem = malloc( sizeof( SOQUE_THREAD ) * sh_count + CACHELINE_SIZE );
         
@@ -450,10 +455,29 @@ struct SOQUE_THREADS
         for( int i = 0; i < threads_count; i++ )
             vt.push_back( std::thread( &soque_thread, this, i ) );
 
+        vt.push_back( std::thread( &orchestra_thread, this ) );
+
         for( int i = 0; i < threads_count; i++ )
             sit_on_cpu( vt[i] );
 
         return 1;
+    }
+
+    static void orchestra_work( SOQUE_THREADS * sts )
+    {
+        sts->wait = 0;
+        sts->wait_signal = 0;
+    }
+
+    static void orchestra_thread( SOQUE_THREADS * sts )
+    {
+        for( ; !sts->shutdown; )
+        {
+            sts->wait = 1;
+            std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
+            if( sts->wait )
+                sts->wait_signal++;
+        }
     }
 
     static void soque_thread( SOQUE_THREADS * sts, int thread_id )
@@ -461,73 +485,66 @@ struct SOQUE_THREADS
         std::this_thread::sleep_for( std::chrono::milliseconds( 100 ) );
 
         int i = 0;
-        int pos;
-        int batch;
-        int batch_check;
-        int nowork = 1;
-        int max_batch = 16;
+        int io_batch;
+        int proc_batch;
+        int proc_index;
 
         for( ; !sts->shutdown; )
         {
             SOQUE_HANDLE sh = sts->t[i].sh;
 
+            if( thread_id >= sts->soques_count && sts->wait_signal > 16 )
+                std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
+
             // ... pop > push > proc ...
             if( i == thread_id )
             for( ;; )
             {
-                batch = soque_pop( sh, 0 );
+                io_batch = soque_pop( sh, 0 );
 
-                if( batch )
+                if( io_batch )
                 {
-                    batch = sh->pop_cb( sh->cb_arg, batch, 0 );
+                    io_batch = sh->pop_cb( sh->cb_arg, io_batch, 0 );
 
-                    if( batch )
+                    if( io_batch )
                     {
-                        soque_pop( sh, batch );
+                        soque_pop( sh, io_batch );
 
-                        g_read_count += batch;
-                    }
+                        g_read_count += io_batch;
 
-                    nowork = 0;
-                }
-
-                batch = soque_push( sh, 0 );
-
-                if( batch )
-                {
-                    batch = sh->push_cb( sh->cb_arg, batch, nowork > 8 );
-
-                    if( batch )
-                    {
-                        batch_check = soque_push( sh, batch );
-
-                        if( batch_check != batch )
-                        {
-                            batch_check += soque_push( sh, batch - batch_check );
-                            assert( batch_check == batch );
-                        }
-
-                        nowork = 0;
+                        orchestra_work( sts );
                     }
                 }
 
-                batch = 0;
+                io_batch = soque_push( sh, 0 );
+
+                if( io_batch )
+                {
+                    io_batch = sh->push_cb( sh->cb_arg, io_batch, sts->wait_signal > 64 );
+
+                    if( io_batch )
+                    {
+                        soque_push( sh, io_batch );
+
+                        orchestra_work( sts );
+                    }
+                }
 
                 for( ;; )
                 {
-                    if( 0 == ( batch = soque_proc_open( sh, max_batch, &pos ) ) )
+                    if( 0 == ( proc_batch = soque_proc_open( sh, 16, &proc_index ) ) )
                         break;
 
-                    sh->proc_cb( sh->cb_arg, batch, pos );
+                    sh->proc_cb( sh->cb_arg, proc_batch, proc_index );
 
-                    soque_proc_done( sh, batch, pos );
-                    nowork = 0;
+                    soque_proc_done( sh, proc_batch, proc_index );
+                    orchestra_work( sts );
 
-                    if( batch == max_batch )
+                    if( proc_batch == 16 )
                         break;
                 }
 
-                if( batch )
+                if( io_batch )
                     continue;
 
                 break;
@@ -535,31 +552,23 @@ struct SOQUE_THREADS
             else
             // proc only
             {
-                batch = 0;
-
                 for( ;; )
                 {
-                    if( 0 == ( batch = soque_proc_open( sh, max_batch, &pos ) ) )
+                    if( 0 == ( proc_batch = soque_proc_open( sh, 64, &proc_index ) ) )
                         break;
 
-                    sh->proc_cb( sh->cb_arg, batch, pos );
+                    sh->proc_cb( sh->cb_arg, proc_batch, proc_index );
 
-                    soque_proc_done( sh, batch, pos );
-                    nowork = 0;
+                    soque_proc_done( sh, proc_batch, proc_index );
+                    orchestra_work( sts );
 
-                    if( batch == max_batch )
+                    if( proc_batch == 64 )
                         break;
                 }
             }
 
             if( ++i == sts->soques_count )
-            {
                 i = 0;
-                if( ++nowork > 8 )
-                {
-                    std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
-                }
-            }
         }
     }
 
@@ -680,7 +689,7 @@ int main( int argc, char ** argv )
     double speed_approx = 0;
     int n = 0;
 
-    for( ;; )
+    for( ; !sth->shutdown; )
     {
         long long speed_save = g_read_count;
         std::this_thread::sleep_for( std::chrono::milliseconds( 1000 ) );
