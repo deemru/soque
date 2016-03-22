@@ -16,7 +16,7 @@ extern "C" {
 
     typedef struct SOQUE * SOQUE_HANDLE;
 
-    SOQUE_API SOQUE_HANDLE SOQUE_CALL soque_open( int size, int threads, void * cb_arg, soque_push_cb, soque_proc_cb, soque_pop_cb );
+    SOQUE_API SOQUE_HANDLE SOQUE_CALL soque_open( int size, void * cb_arg, soque_push_cb, soque_proc_cb, soque_pop_cb );
     SOQUE_API int SOQUE_CALL soque_push( SOQUE_HANDLE sh, int push_count );
     SOQUE_API int SOQUE_CALL soque_proc_open( SOQUE_HANDLE sh, int proc_count, int * proc_index );
     SOQUE_API int SOQUE_CALL soque_proc_done( SOQUE_HANDLE sh, int proc_count, int proc_index );

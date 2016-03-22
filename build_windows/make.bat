@@ -1,8 +1,12 @@
 if not "%1"=="" (
-    set out=%1
+    set OUT=%1
 ) else (
-    set out=soque.exe
+    set OUT=soque
 )
+
 cl /c /Ox /Os /GL /GF /GS- /W4 /EHsc ../src/soque.cpp
+cl /c /Ox /Os /GL /GF /GS- /W4 /EHsc ../src/soque_test.c
 rc -r soque.rc
-link /LTCG soque.obj soque.res /subsystem:console /OUT:%out%
+
+link /DLL /LTCG soque.obj soque.res /OUT:%OUT%.dll
+link /LTCG soque_test.obj soque.res %OUT%.lib /subsystem:console /OUT:%OUT%.exe

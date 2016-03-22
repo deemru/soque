@@ -2,8 +2,8 @@
 
 2 ICON "soque.ico"
 
-#define PCS_VERSION             1,16,03,05
-#define PCS_VERSION_STR         "512K\0"
+#define PCS_VERSION             1,16,03,22
+#define PCS_VERSION_STR         "256K\0"
 
 VS_VERSION_INFO VERSIONINFO
 FILEVERSION     PCS_VERSION

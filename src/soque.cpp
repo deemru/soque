@@ -23,26 +23,17 @@
 #define CACHELINE_SIZE 128
 #define CACHELINE_SHIFT( addr, type ) ((type)( (uintptr_t)addr + CACHELINE_SIZE - ( (uintptr_t)addr % CACHELINE_SIZE ) ))
 
-#if defined _WIN32
-
+#ifdef _WIN32
 #pragma warning( disable: 4200 ) // nonstandard extension used : zero-sized array in struct/union
 #pragma warning( disable: 4324 ) // structure was padded due to __declspec(align())
 #define CACHELINE_ALIGN( x ) __declspec( align( CACHELINE_SIZE ) ) x
 #define rdtsc() __rdtsc()
-
 #else
-
 #define CACHELINE_ALIGN( x ) x __attribute__ ( ( aligned( CACHELINE_SIZE ) ) )
 #define rdtsc() __builtin_ia32_rdtsc()
-
 #endif
 
-#define SOQUE_DEFAULT_PENALTY 100000
-#define SOQUE_DEFAULT_Q_SIZE 100000
-
 static const int SOQUE_MAX_THREADS = (int)std::thread::hardware_concurrency();
-static unsigned SOQUE_PENALTY = SOQUE_DEFAULT_PENALTY;
-static std::atomic<long long> g_read_count;
 
 struct SOQUE
 {
@@ -59,56 +50,41 @@ struct SOQUE
         char status;
     };
 
-    static void penalty_yield()
+    static void soque_yield()
     {
-#if 1
 #if defined _WIN32
         SwitchToThread();
 #else
         sched_yield();
 #endif
-#else
-        std::this_thread::sleep_for( std::chrono::nanoseconds( 1 ) );
-#endif
-    }
-
-    static void penalty_rdtsc()
-    {
-        unsigned long long now = rdtsc();
-        while( rdtsc() - now < SOQUE_PENALTY ){}
     }
 
     struct guard_proc
     {
-        guard_proc( SOQUE * soque )
+        guard_proc( SOQUE * soque, int priority )
         {
-            if( soque->proc_threads > 1 )
-                for( ;; )
-                {
-                    bool f = false;
-                    if( soque->proc_lock.compare_exchange_weak( f, true ) )
-                        break;
-                    soque->proc_penalty();
-                }
+            for( ;; )
+            {
+                bool f = false;
+                if( soque->proc_lock.compare_exchange_weak( f, true ) )
+                    break;
+
+                if( priority == 0 )
+                    soque_yield();
+            }
 
             soque_caller = soque;
         }
 
         ~guard_proc()
         {
-            if( soque_caller->proc_threads > 1 )
-                soque_caller->proc_lock = false;
+            soque_caller->proc_lock = false;
         }
 
         SOQUE * soque_caller;
     };
 
-    void open( int size,
-        int threads,
-        void * arg,
-        soque_push_cb push,
-        soque_proc_cb proc,
-        soque_pop_cb pop );
+    void open( int size, void * arg, soque_push_cb push, soque_proc_cb proc, soque_pop_cb pop );
     int push( int push_count );
     int proc_open( int proc_count, int * index );
     int proc_done( int proc_count, int index );
@@ -119,35 +95,20 @@ struct SOQUE
     CACHELINE_ALIGN( int proc_run );
     CACHELINE_ALIGN( int proc_fixed );
     CACHELINE_ALIGN( int pop_fixed );
-
     CACHELINE_ALIGN( std::atomic_bool proc_lock );
-
     CACHELINE_ALIGN( int q_size );
-    int proc_threads;
-    void ( * proc_penalty )();
-
     void * cb_arg;
     soque_push_cb push_cb;
     soque_proc_cb proc_cb;
     soque_pop_cb pop_cb;
-
-    void * mem;
-
+    void * original_alloc;
     CACHELINE_ALIGN( MARKER markers[0] );
 };
 
-void SOQUE::open( int size,
-                  int threads,
-                  void * arg,
-                  soque_push_cb push,
-                  soque_proc_cb proc,
-                  soque_pop_cb pop )
+void SOQUE::open( int size, void * arg, soque_push_cb push, soque_proc_cb proc, soque_pop_cb pop )
 {
     memset( this, 0, sizeof( SOQUE ) + sizeof( MARKER ) * size );
     q_size = size;
-    proc_threads = threads;
-    proc_penalty = proc_threads > (int)SOQUE_MAX_THREADS ? penalty_yield : penalty_rdtsc;
-
     cb_arg = arg;
     push_cb = push;
     proc_cb = proc;
@@ -211,7 +172,7 @@ int SOQUE::proc_open( int proc_count, int * index )
     int push_max;
 
     {
-        guard_proc gp( this );
+        guard_proc gp( this, 0 );
 
         proc_here = proc_run;
         push_max = push_fixed;
@@ -258,7 +219,7 @@ int SOQUE::proc_done( int proc_count, int proc_done )
     int proc_next;
 
     {
-        guard_proc gp( this );
+        guard_proc gp( this, proc_done == proc_fixed );
 
         for( int i = 0; i < proc_count; i++ )
         {
@@ -340,21 +301,16 @@ int SOQUE::pop( int pop_count )
     return pop_count;
 }
 
-SOQUE_HANDLE SOQUE_CALL soque_open( int queue_size,
-                         int max_threads,
-                         void * cb_arg,
-                         soque_push_cb push_cb,
-                         soque_proc_cb proc_cb,
-                         soque_pop_cb pop_cb )
+SOQUE_HANDLE SOQUE_CALL soque_open( int size, void * cb_arg, soque_push_cb push_cb, soque_proc_cb proc_cb, soque_pop_cb pop_cb )
 {
-    void * mem = malloc( sizeof( SOQUE ) + sizeof( SOQUE::MARKER ) * queue_size + CACHELINE_SIZE );
+    void * mem = malloc( sizeof( SOQUE ) + sizeof( SOQUE::MARKER ) * size + CACHELINE_SIZE );
 
     if( !mem )
         return NULL;
 
     SOQUE_HANDLE sh = CACHELINE_SHIFT( mem, SOQUE_HANDLE );
-    sh->open( queue_size, max_threads, cb_arg, push_cb, proc_cb, pop_cb );
-    sh->mem = mem;
+    sh->open( size, cb_arg, push_cb, proc_cb, pop_cb );
+    sh->original_alloc = mem;
 
     return sh;
 }
@@ -381,7 +337,7 @@ int SOQUE_CALL soque_pop( SOQUE_HANDLE sh, int pop_count )
 
 void SOQUE_CALL soque_done( SOQUE_HANDLE sh )
 {
-    void * mem = sh->mem;
+    void * mem = sh->original_alloc;
     sh->done();
     free( mem );
 }
@@ -510,8 +466,6 @@ struct SOQUE_THREADS
                     {
                         soque_pop( sh, io_batch );
 
-                        g_read_count += io_batch;
-
                         orchestra_work( sts );
                     }
                 }
@@ -608,100 +562,3 @@ void SOQUE_CALL soque_threads_done( SOQUE_THREADS_HANDLE sth )
     free( sth );
 }
 
-static int SOQUE_CALL empty_soque_cb( void * arg, int count, int waitable )
-{
-    (void)arg;
-    (void)waitable;
-
-    return count;
-}
-
-
-static void SOQUE_CALL empty_soque_proc_cb( void * arg, int pos, int count )
-{
-    (void)arg;
-    (void)pos;
-    (void)count;
-}
-
-static soque_push_cb push_cb = &empty_soque_cb;
-static soque_proc_cb proc_cb = &empty_soque_proc_cb;
-static soque_pop_cb pop_cb = &empty_soque_cb;
-
-int main( int argc, char ** argv )
-{
-    int queue_size = SOQUE_DEFAULT_Q_SIZE;
-    int threads_count = 1;
-
-    if( argc == 4 )
-    {
-        queue_size = atoi( argv[1] );
-        threads_count = atoi( argv[2] );
-        SOQUE_PENALTY = atoi( argv[3] );
-    }
-
-    printf( "queue_size = %d\n", queue_size );
-    printf( "threads_count = %d\n", threads_count );
-    printf( "SOQUE_PENALTY = %d\n\n", SOQUE_PENALTY );
-    
-#if 0
-
-    SOQUE_HANDLE q[3];
-    q[2] = soque_open( q_count, 1, NULL, NULL, NULL, NULL );
-    q[0] = soque_open( q_count, p_count, q[2], push_cb, proc_cb, (soque_pop_batch_cb)&soque_push_batch );
-    q[1] = soque_open( q_count, p_count, q[2], (soque_push_batch_cb)&soque_pop_batch, proc_cb, pop_cb );
-
-    std::thread temp( [&]() {
-        int pos;
-
-        for( ;; )
-        {
-            while( ( pos = q[2]->proc_get() ) != -1 )
-            {
-                //std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
-                q[2]->proc_sync( pos );
-            }
-
-            //std::this_thread::sleep_for( std::chrono::milliseconds( 1000 ) );
-        }
-    } );
-#else
-
-    SOQUE_HANDLE q[2];
-    q[0] = soque_open( queue_size, threads_count, NULL, push_cb, proc_cb, pop_cb );
-    q[1] = soque_open( queue_size, threads_count, NULL, push_cb, proc_cb, pop_cb );
-
-#endif
-
-    
-
-    printf( "sizeof( struct SOQUE ) = %d\n", ( int )sizeof( SOQUE ) );
-    printf( "sizeof( struct SOQUE_THREAD ) = %d\n", ( int )sizeof( SOQUE_THREAD ) );
-    printf( "sizeof( struct SOQUE_THREADS ) = %d\n\n", ( int )sizeof( SOQUE_THREADS ) );
-
-
-    SOQUE_THREADS_HANDLE sth;
-    sth = soque_threads_open( threads_count, q, 2 );
-
-    std::this_thread::sleep_for( std::chrono::milliseconds( 1000 ) ); // warming
-
-    double speed_moment = 0;
-    double speed_approx = 0;
-    int n = 0;
-
-    for( ; !sth->shutdown; )
-    {
-        long long speed_save = g_read_count;
-        std::this_thread::sleep_for( std::chrono::milliseconds( 1000 ) );
-        double speed_change = speed_moment;
-        double speed_approx_change = speed_approx;
-        speed_moment = (double)( g_read_count - speed_save );
-        speed_approx = ( speed_approx * n + speed_moment ) / ( n + 1 );
-        printf( "Mpps:   %.03f (%s%0.03f)   ~   %.03f (%s%0.03f)\n", 
-            speed_moment / 1000000,
-            speed_change <= speed_moment ? "+" : "", ( speed_moment - speed_change ) / 1000000,
-            speed_approx / 1000000,
-            speed_approx_change <= speed_approx ? "+" : "", ( speed_approx - speed_approx_change ) / 1000000 );
-        n++;
-    }
-}
