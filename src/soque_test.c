@@ -5,6 +5,7 @@
 #else
 #include <stdlib.h>
 #include <unistd.h>
+#include <dlfcn.h>
 #endif
 
 #include "soque.h"
@@ -39,12 +40,19 @@ static soque_pop_cb pop_cb = &empty_soque_cb;
 
 #ifdef _WIN32
 #define SLEEP_1_SEC Sleep( 1000 )
+#define LIBLOAD( name ) LoadLibraryA( name )
+#define LIBFUNC( lib, name ) (UINT_PTR)GetProcAddress( lib, name )
 #else
 #define SLEEP_1_SEC sleep( 1 )
+#define LIBLOAD( name ) dlopen( name, RTLD_LAZY )
+#define LIBFUNC( lib, name ) dlsym( lib, name )
 #endif
+
+soque_framework_t soque_get_framework;
 
 int main( int argc, char ** argv )
 {
+    SOQUE_FRAMEWORK * sf;
     SOQUE_HANDLE q[2];
     int queue_size = 4000;
     int threads_count = 1;
@@ -61,13 +69,41 @@ int main( int argc, char ** argv )
         threads_count = atoi( argv[2] );
     }
 
+    {
+        void * lib = LIBLOAD( SOQUE_LIBRARY );
+
+        if( !lib )
+        {
+            printf( "ERROR: \"%s\" not loaded\n", SOQUE_LIBRARY );
+            return 0;
+        }
+
+        soque_get_framework = (soque_framework_t)LIBFUNC( lib, SOQUE_GET_FRAMEWORK );
+
+        if( !soque_get_framework )
+        {
+            printf( "ERROR: \"%s\" not found in \"%s\"\n", SOQUE_GET_FRAMEWORK, SOQUE_LIBRARY );
+            return 0;
+        }
+
+        sf = soque_get_framework();
+
+        if( sf->soque_major < SOQUE_MAJOR )
+        {
+            printf( "ERROR: soque version %d.%d < %d.%d\n", sf->soque_major, sf->soque_minor, SOQUE_MAJOR, SOQUE_MINOR );
+            return 0;
+        }
+
+        printf( "soque %d.%d loaded\n", sf->soque_major, sf->soque_minor );
+    }
+
     printf( "queue_size = %d\n", queue_size );
     printf( "threads_count = %d\n\n", threads_count );
     
-    q[0] = soque_open( queue_size, NULL, push_cb, proc_cb, pop_cb );
-    q[1] = soque_open( queue_size, NULL, push_cb, proc_cb, pop_cb );
+    q[0] = sf->soque_open( queue_size, NULL, push_cb, proc_cb, pop_cb );
+    q[1] = sf->soque_open( queue_size, NULL, push_cb, proc_cb, pop_cb );
 
-    soque_threads_open( threads_count, q, 2 );
+    sf->soque_threads_open( threads_count, q, 2 );
 
     SLEEP_1_SEC; // warming
 

@@ -351,8 +351,6 @@ struct SOQUE_THREAD
     CACHELINE_ALIGN( char aligner[0] );
 };
 
-
-
 struct SOQUE_THREADS
 {
     int shutdown;
@@ -560,5 +558,23 @@ void SOQUE_CALL soque_threads_done( SOQUE_THREADS_HANDLE sth )
 {
     sth->cleanup();
     free( sth );
+}
+
+SOQUE_FRAMEWORK * SOQUE_CALL soque_framework()
+{
+    static SOQUE_FRAMEWORK sf;
+    sf.soque_major = SOQUE_MAJOR;
+    sf.soque_minor = SOQUE_MINOR;
+
+    sf.soque_open = soque_open;
+    sf.soque_push = soque_push;
+    sf.soque_proc_open = soque_proc_open;
+    sf.soque_proc_done = soque_proc_done;
+    sf.soque_pop = soque_pop;
+    sf.soque_done = soque_done;
+    sf.soque_threads_open = soque_threads_open;
+    sf.soque_threads_done = soque_threads_done;
+
+    return &sf;
 }
 
