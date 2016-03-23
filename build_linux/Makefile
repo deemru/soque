@@ -3,8 +3,8 @@ all: libsoque.so soque
 libsoque.so:
 	g++ -std=c++11 -fPIC -shared -lpthread -g -O2 -Wall -Werror -Wno-unused-function ../src/soque.cpp -o libsoque.so
 
-soque: libsoque.so
-	gcc -I../src -g -O2 -Wall -Werror -Wno-unused-function ../src/soque_test.c -ldl -o soque
+soque:
+	gcc -I../src -g -O2 -Wall -Werror -Wno-unused-function ../examples/soque_test.c -ldl -o soque
 
 install: libsoque.so soque
 	cp libsoque.so /usr/lib/libsoque.so

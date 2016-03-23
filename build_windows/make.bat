@@ -5,7 +5,7 @@ if not "%1"=="" (
 )
 
 cl /c /Ox /Os /GL /GF /GS- /W4 /EHsc ../src/soque.cpp
-cl /c /Ox /Os /GL /GF /GS- /W4 /EHsc ../src/soque_test.c
+cl /c /Ox /Os /GL /GF /GS- /W4 /EHsc /I../src ../examples/soque_test.c
 rc -r soque.rc
 
 link /DLL /LTCG soque.obj soque.res /OUT:%OUT%.dll
