@@ -48,11 +48,43 @@ static soque_pop_cb pop_cb = &empty_soque_cb;
 #define LIBFUNC( lib, name ) dlsym( lib, name )
 #endif
 
-soque_framework_t soque_get_framework;
+static const SOQUE_FRAMEWORK * soq;
+
+int soque_load()
+{
+    soque_framework_t soque_get_framework;
+
+    void * lib = LIBLOAD( SOQUE_LIBRARY );
+
+    if( !lib )
+    {
+        printf( "ERROR: \"%s\" not loaded\n", SOQUE_LIBRARY );
+        return 0;
+    }
+
+    soque_get_framework = (soque_framework_t)LIBFUNC( lib, SOQUE_GET_FRAMEWORK );
+
+    if( !soque_get_framework )
+    {
+        printf( "ERROR: \"%s\" not found in \"%s\"\n", SOQUE_GET_FRAMEWORK, SOQUE_LIBRARY );
+        return 0;
+    }
+
+    soq = soque_get_framework();
+
+    if( soq->soque_major < SOQUE_MAJOR )
+    {
+        printf( "ERROR: soque version %d.%d < %d.%d\n", soq->soque_major, soq->soque_minor, SOQUE_MAJOR, SOQUE_MINOR );
+        return 0;
+    }
+
+    printf( "soque %d.%d loaded\n", soq->soque_major, soq->soque_minor );
+
+    return 1;
+}
 
 int main( int argc, char ** argv )
 {
-    SOQUE_FRAMEWORK * sf;
     SOQUE_HANDLE q[2];
     int queue_size = 4000;
     int threads_count = 1;
@@ -69,41 +101,16 @@ int main( int argc, char ** argv )
         threads_count = atoi( argv[2] );
     }
 
-    {
-        void * lib = LIBLOAD( SOQUE_LIBRARY );
-
-        if( !lib )
-        {
-            printf( "ERROR: \"%s\" not loaded\n", SOQUE_LIBRARY );
-            return 0;
-        }
-
-        soque_get_framework = (soque_framework_t)LIBFUNC( lib, SOQUE_GET_FRAMEWORK );
-
-        if( !soque_get_framework )
-        {
-            printf( "ERROR: \"%s\" not found in \"%s\"\n", SOQUE_GET_FRAMEWORK, SOQUE_LIBRARY );
-            return 0;
-        }
-
-        sf = soque_get_framework();
-
-        if( sf->soque_major < SOQUE_MAJOR )
-        {
-            printf( "ERROR: soque version %d.%d < %d.%d\n", sf->soque_major, sf->soque_minor, SOQUE_MAJOR, SOQUE_MINOR );
-            return 0;
-        }
-
-        printf( "soque %d.%d loaded\n", sf->soque_major, sf->soque_minor );
-    }
+    if( !soque_load() )
+        return 1;
 
     printf( "queue_size = %d\n", queue_size );
     printf( "threads_count = %d\n\n", threads_count );
     
-    q[0] = sf->soque_open( queue_size, NULL, push_cb, proc_cb, pop_cb );
-    q[1] = sf->soque_open( queue_size, NULL, push_cb, proc_cb, pop_cb );
+    q[0] = soq->soque_open( queue_size, NULL, push_cb, proc_cb, pop_cb );
+    q[1] = soq->soque_open( queue_size, NULL, push_cb, proc_cb, pop_cb );
 
-    sf->soque_threads_open( threads_count, q, 2 );
+    soq->soque_threads_open( threads_count, q, 2 );
 
     SLEEP_1_SEC; // warming
 
