@@ -7,8 +7,8 @@ soque:
 	gcc -I../src -g -O2 -Wall -Werror -Wno-unused-function ../examples/soque_test.c -ldl -o soque
 
 install: libsoque.so soque
-	cp libsoque.so /usr/lib/libsoque.so
-	cp soque /usr/bin/soque
+	install -D libsoque.so /usr/lib/libsoque.so
+	install -D soque /usr/bin/soque
 
 cleanup:
 	if test -e libsoque.so; then unlink libsoque.so; fi

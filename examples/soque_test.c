@@ -78,39 +78,45 @@ int soque_load()
         return 0;
     }
 
-    printf( "soque %d.%d loaded\n", soq->soque_major, soq->soque_minor );
+    printf( "%s (%d.%d) loaded\n", SOQUE_LIBRARY, soq->soque_major, soq->soque_minor );
 
     return 1;
 }
 
 int main( int argc, char ** argv )
 {
-    SOQUE_HANDLE q[2];
-    int queue_size = 4000;
+    SOQUE_HANDLE * q;
+    int queue_size = 2048;
     int threads_count = 1;
+    int queue_count = 1;
     long long speed_save;
     double speed_change;
     double speed_approx_change;
     double speed_moment = 0;
     double speed_approx = 0;
     int n = 0;
+    int i;
 
-    if( argc == 3 )
+    if( argc == 4 )
     {
         queue_size = atoi( argv[1] );
-        threads_count = atoi( argv[2] );
+        queue_count = atoi( argv[2] );
+        threads_count = atoi( argv[3] );
     }
 
     if( !soque_load() )
         return 1;
 
     printf( "queue_size = %d\n", queue_size );
+    printf( "queue_count = %d\n", queue_count );
     printf( "threads_count = %d\n\n", threads_count );
     
-    q[0] = soq->soque_open( queue_size, NULL, push_cb, proc_cb, pop_cb );
-    q[1] = soq->soque_open( queue_size, NULL, push_cb, proc_cb, pop_cb );
+    q = malloc( queue_count * sizeof( void * ) );
 
-    soq->soque_threads_open( threads_count, q, 2 );
+    for( i = 0; i < queue_count; i++ )
+        q[i] = soq->soque_open( queue_size, NULL, push_cb, proc_cb, pop_cb );
+
+    soq->soque_threads_open( threads_count, q, queue_count );
 
     SLEEP_1_SEC; // warming
 

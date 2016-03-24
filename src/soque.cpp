@@ -562,19 +562,20 @@ void SOQUE_CALL soque_threads_done( SOQUE_THREADS_HANDLE sth )
 
 SOQUE_FRAMEWORK * SOQUE_CALL soque_framework()
 {
-    static SOQUE_FRAMEWORK sf;
-    sf.soque_major = SOQUE_MAJOR;
-    sf.soque_minor = SOQUE_MINOR;
+    static SOQUE_FRAMEWORK soq;
 
-    sf.soque_open = soque_open;
-    sf.soque_push = soque_push;
-    sf.soque_proc_open = soque_proc_open;
-    sf.soque_proc_done = soque_proc_done;
-    sf.soque_pop = soque_pop;
-    sf.soque_done = soque_done;
-    sf.soque_threads_open = soque_threads_open;
-    sf.soque_threads_done = soque_threads_done;
+    soq.soque_major = SOQUE_MAJOR;
+    soq.soque_minor = SOQUE_MINOR;
 
-    return &sf;
+    soq.soque_open = soque_open;
+    soq.soque_push = soque_push;
+    soq.soque_proc_open = soque_proc_open;
+    soq.soque_proc_done = soque_proc_done;
+    soq.soque_pop = soque_pop;
+    soq.soque_done = soque_done;
+    soq.soque_threads_open = soque_threads_open;
+    soq.soque_threads_done = soque_threads_done;
+
+    return &soq;
 }
 
