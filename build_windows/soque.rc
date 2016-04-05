@@ -21,7 +21,6 @@ BEGIN
         BEGIN
             VALUE "FileDescription", "Strict order queue framework\0"
             VALUE "LegalCopyright", "deemru\0"
-            VALUE "OriginalFilename", "soque.exe\0"
             VALUE "ProductName", "soque\0"
             VALUE "ProductVersion", PCS_VERSION_STR
         END
