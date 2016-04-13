@@ -33,7 +33,7 @@
 #define rdtsc() __builtin_ia32_rdtsc()
 #endif
 
-static const int SOQUE_MAX_THREADS = (int)std::thread::hardware_concurrency();
+static const unsigned SOQUE_MAX_THREADS = std::thread::hardware_concurrency();
 
 struct SOQUE
 {
@@ -61,7 +61,7 @@ struct SOQUE
 
     struct guard_proc
     {
-        guard_proc( SOQUE * soque, int priority )
+        guard_proc( SOQUE * soque, char priority )
         {
             for( ;; )
             {
@@ -84,19 +84,19 @@ struct SOQUE
         SOQUE * soque_caller;
     };
 
-    void open( int size, void * arg, soque_push_cb push, soque_proc_cb proc, soque_pop_cb pop );
-    int push( int push_count );
-    int proc_open( int proc_count, int * index );
-    int proc_done( int proc_count, int index );
-    int pop( int pop_count );
+    void open( unsigned size, void * arg, soque_push_cb push, soque_proc_cb proc, soque_pop_cb pop );
+    unsigned push( unsigned push_count );
+    unsigned proc_open( unsigned proc_count, unsigned * index );
+    char proc_done( unsigned proc_count, unsigned index );
+    unsigned pop( unsigned pop_count );
     void done();
 
-    CACHELINE_ALIGN( int push_fixed );
-    CACHELINE_ALIGN( int proc_run );
-    CACHELINE_ALIGN( int proc_fixed );
-    CACHELINE_ALIGN( int pop_fixed );
+    CACHELINE_ALIGN( unsigned push_fixed );
+    CACHELINE_ALIGN( unsigned proc_run );
+    CACHELINE_ALIGN( unsigned proc_fixed );
+    CACHELINE_ALIGN( unsigned pop_fixed );
     CACHELINE_ALIGN( std::atomic_bool proc_lock );
-    CACHELINE_ALIGN( int q_size );
+    CACHELINE_ALIGN( unsigned q_size );
     void * cb_arg;
     soque_push_cb push_cb;
     soque_proc_cb proc_cb;
@@ -105,7 +105,7 @@ struct SOQUE
     CACHELINE_ALIGN( MARKER markers[0] );
 };
 
-void SOQUE::open( int size, void * arg, soque_push_cb push, soque_proc_cb proc, soque_pop_cb pop )
+void SOQUE::open( unsigned size, void * arg, soque_push_cb push, soque_proc_cb proc, soque_pop_cb pop )
 {
     memset( this, 0, sizeof( SOQUE ) + sizeof( MARKER ) * size );
     q_size = size;
@@ -120,25 +120,21 @@ void SOQUE::done()
 
 }
 
-int SOQUE::push( int push_count )
+unsigned SOQUE::push( unsigned push_count )
 {
-    int push_here;
-    int push_next;
-    int push_max;
-    int pop_max;
+    unsigned push_here;
+    unsigned push_next;
+    unsigned push_max;
 
     push_here = push_fixed;
-    pop_max = pop_fixed - 1;
+    push_max = pop_fixed;
 
-    if( pop_max < push_here )
-        pop_max += q_size;
+    if( push_max > push_here )
+        push_max = push_max - push_here - 1;
+    else
+        push_max = q_size + push_max - push_here - 1;
 
-    if( pop_max == push_here )
-        return 0;
-
-    push_max = pop_max - push_here;
-
-    if( push_count == 0 )
+    if( push_max == 0 || push_count == 0 )
         return push_max;
 
     if( push_count > push_max )
@@ -149,7 +145,7 @@ int SOQUE::push( int push_count )
     if( push_next >= q_size )
         push_next -= q_size;
 
-    for( int i = 0; i < push_count; i++ )
+    for( unsigned i = 0; i < push_count; i++ )
     {
         if( push_here + i == q_size )
             push_here -= q_size;
@@ -164,26 +160,25 @@ int SOQUE::push( int push_count )
     return push_count;
 }
 
-int SOQUE::proc_open( int proc_count, int * index )
+unsigned SOQUE::proc_open( unsigned proc_count, unsigned * index )
 {
-    int proc_here;
-    int proc_next;
-    int proc_max;
-    int push_max;
+    unsigned proc_here;
+    unsigned proc_next;
+    unsigned proc_max;
 
     {
         guard_proc gp( this, 0 );
 
         proc_here = proc_run;
-        push_max = push_fixed;
+        proc_max = push_fixed;
 
-        if( push_max < proc_here )
-            push_max += q_size;
-
-        if( push_max == proc_here )
+        if( proc_max == proc_here )
             return 0;
 
-        proc_max = push_max - proc_here;
+        if( proc_max > proc_here )
+            proc_max = proc_max - proc_here;
+        else
+            proc_max = q_size + proc_max - proc_here;
 
         if( proc_count == 0 )
             return proc_max;
@@ -201,7 +196,7 @@ int SOQUE::proc_open( int proc_count, int * index )
 
     *index = proc_here;
     
-    for( int i = 0; i < proc_count; i++ )
+    for( unsigned i = 0; i < proc_count; i++ )
     {
         if( proc_here + i == q_size )
             proc_here -= q_size;
@@ -213,15 +208,15 @@ int SOQUE::proc_open( int proc_count, int * index )
 }
 
 
-int SOQUE::proc_done( int proc_count, int proc_done )
+char SOQUE::proc_done( unsigned proc_count, unsigned proc_done )
 {
-    int proc_here = proc_done;
-    int proc_next;
+    unsigned proc_here = proc_done;
+    unsigned proc_next;
 
     {
         guard_proc gp( this, proc_done == proc_fixed );
 
-        for( int i = 0; i < proc_count; i++ )
+        for( unsigned i = 0; i < proc_count; i++ )
         {
             if( proc_here + i == q_size )
                 proc_here -= q_size;
@@ -257,23 +252,22 @@ int SOQUE::proc_done( int proc_count, int proc_done )
     return 1;
 }
 
-int SOQUE::pop( int pop_count )
+unsigned SOQUE::pop( unsigned pop_count )
 {
-    int pop_here;
-    int pop_next;
-    int pop_max;
-    int proc_max;
+    unsigned pop_here;
+    unsigned pop_next;
+    unsigned pop_max;
 
     pop_here = pop_fixed;
-    proc_max = proc_fixed;
+    pop_max = proc_fixed;
 
-    if( proc_max < pop_here )
-        proc_max += q_size;
-
-    if( proc_max == pop_here )
+    if( pop_max == pop_here )
         return 0;
 
-    pop_max = proc_max - pop_here;
+    if( pop_max > pop_here )
+        pop_max = pop_max - pop_here;
+    else
+        pop_max = q_size + pop_max - pop_here;
 
     if( pop_count == 0 )
         return pop_max;
@@ -286,7 +280,7 @@ int SOQUE::pop( int pop_count )
     if( pop_next >= q_size )
         pop_next -= q_size;
 
-    for( int i = 0; i < pop_count; i++ )
+    for( unsigned i = 0; i < pop_count; i++ )
     {
         if( pop_here + i >= q_size )
             pop_here -= q_size;
@@ -301,7 +295,7 @@ int SOQUE::pop( int pop_count )
     return pop_count;
 }
 
-SOQUE_HANDLE SOQUE_CALL soque_open( int size, void * cb_arg, soque_push_cb push_cb, soque_proc_cb proc_cb, soque_pop_cb pop_cb )
+SOQUE_HANDLE SOQUE_CALL soque_open( unsigned size, void * cb_arg, soque_push_cb push_cb, soque_proc_cb proc_cb, soque_pop_cb pop_cb )
 {
     void * mem = malloc( sizeof( SOQUE ) + sizeof( SOQUE::MARKER ) * size + CACHELINE_SIZE );
 
@@ -315,22 +309,22 @@ SOQUE_HANDLE SOQUE_CALL soque_open( int size, void * cb_arg, soque_push_cb push_
     return sh;
 }
 
-int SOQUE_CALL soque_push( SOQUE_HANDLE sh, int push_count )
+unsigned SOQUE_CALL soque_push( SOQUE_HANDLE sh, unsigned push_count )
 {
     return sh->push( push_count );
 }
 
-int SOQUE_CALL soque_proc_open( SOQUE_HANDLE sh, int proc_count, int * proc_index )
+unsigned SOQUE_CALL soque_proc_open( SOQUE_HANDLE sh, unsigned proc_count, unsigned * proc_index )
 {
     return sh->proc_open( proc_count, proc_index );
 }
 
-int SOQUE_CALL soque_proc_done( SOQUE_HANDLE sh, int proc_count, int proc_index )
+char SOQUE_CALL soque_proc_done( SOQUE_HANDLE sh, unsigned proc_count, unsigned proc_index )
 {
     return sh->proc_done( proc_count, proc_index );
 }
 
-int SOQUE_CALL soque_pop( SOQUE_HANDLE sh, int pop_count )
+unsigned SOQUE_CALL soque_pop( SOQUE_HANDLE sh, unsigned pop_count )
 {
     return sh->pop( pop_count );
 }
@@ -346,25 +340,26 @@ struct SOQUE_THREAD
 {
     CACHELINE_ALIGN( SOQUE_HANDLE sh );
     std::atomic_bool guard;
-    int push;
-    int pop;
     CACHELINE_ALIGN( char aligner[0] );
 };
 
 struct SOQUE_THREADS
 {
-    int shutdown;
-    int threads_count;
-    int soques_count;
-    int wait;
-    int wait_signal;
+    char shutdown;
+    unsigned threads_count;
+    unsigned soques_count;
+    unsigned wait;
+    unsigned wait_signal;
+    unsigned fast_batch;
+    unsigned help_batch;
+    std::atomic_uint32_t threads_sync;
     void * mem;
     SOQUE_THREAD * t;
     std::vector<std::thread> vt;
 
     void sit_on_cpu( std::thread & thread )
     {
-        static int n = 0;
+        static unsigned n = 0;
 
         if( n == SOQUE_MAX_THREADS )
             return;
@@ -385,13 +380,16 @@ struct SOQUE_THREADS
         n++;
     }
 
-    int init( int t_count, SOQUE_HANDLE * sh, int sh_count )
+    char init( unsigned t_count, char bind, SOQUE_HANDLE * sh, unsigned sh_count )
     {
         memset( this, 0, sizeof( SOQUE_THREADS ) );
         threads_count = t_count;
         soques_count = sh_count;
         wait = 0;
         wait_signal = 1;
+        fast_batch = 16;
+        help_batch = 16;
+        threads_sync = threads_count;
 
         mem = malloc( sizeof( SOQUE_THREAD ) * sh_count + CACHELINE_SIZE );
         
@@ -400,27 +398,30 @@ struct SOQUE_THREADS
 
         t = CACHELINE_SHIFT( mem, SOQUE_THREAD * );
 
-        for( int i = 0; i < sh_count; i++ )
+        for( unsigned i = 0; i < sh_count; i++ )
         {
             memset( &t[i], 0, sizeof( SOQUE_THREAD ) );
             t[i].sh = sh[i];
         }
 
-        for( int i = 0; i < threads_count; i++ )
+        for( unsigned i = 0; i < threads_count; i++ )
             vt.push_back( std::thread( &soque_thread, this, i ) );
 
         vt.push_back( std::thread( &orchestra_thread, this ) );
 
-        for( int i = 0; i < threads_count; i++ )
-            sit_on_cpu( vt[i] );
+        if( bind )
+        {
+            for( unsigned i = 0; i < threads_count; i++ )
+                sit_on_cpu( vt[i] );
+        }
 
         return 1;
     }
 
-    static void orchestra_work( SOQUE_THREADS * sts )
+    void orchestra_work()
     {
-        sts->wait = 0;
-        sts->wait_signal = 0;
+        wait = 0;
+        wait_signal = 0;
     }
 
     static void orchestra_thread( SOQUE_THREADS * sts )
@@ -434,16 +435,22 @@ struct SOQUE_THREADS
         }
     }
 
-    static void soque_thread( SOQUE_THREADS * sts, int thread_id )
+    void syncstart()
     {
-        std::this_thread::sleep_for( std::chrono::milliseconds( 100 ) );
+        threads_sync--;
+        while( threads_sync != 0 )
+            std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
+    }
 
-        int i = 0;
-        int io_batch;
-        int proc_batch;
-        int proc_index;
+    static void soque_thread( SOQUE_THREADS * sts, unsigned thread_id )
+    {
+        unsigned i = 0;
+        unsigned io_batch;
+        unsigned proc_batch;
+        unsigned proc_index;
+        unsigned proc_done;
 
-        for( ; !sts->shutdown; )
+        for( sts->syncstart(); !sts->shutdown; )
         {
             SOQUE_HANDLE sh = sts->t[i].sh;
 
@@ -464,7 +471,7 @@ struct SOQUE_THREADS
                     {
                         soque_pop( sh, io_batch );
 
-                        orchestra_work( sts );
+                        sts->orchestra_work();
                     }
                 }
 
@@ -478,21 +485,25 @@ struct SOQUE_THREADS
                     {
                         soque_push( sh, io_batch );
 
-                        orchestra_work( sts );
+                        sts->orchestra_work();
                     }
                 }
 
+                proc_done = 0;
+
                 for( ;; )
                 {
-                    if( 0 == ( proc_batch = soque_proc_open( sh, 16, &proc_index ) ) )
+                    if( 0 == ( proc_batch = soque_proc_open( sh, sts->fast_batch, &proc_index ) ) )
                         break;
 
                     sh->proc_cb( sh->cb_arg, proc_batch, proc_index );
 
                     soque_proc_done( sh, proc_batch, proc_index );
-                    orchestra_work( sts );
+                    sts->orchestra_work();
 
-                    if( proc_batch == 16 )
+                    proc_done += proc_batch;
+
+                    if( proc_done >= sts->fast_batch )
                         break;
                 }
 
@@ -504,17 +515,21 @@ struct SOQUE_THREADS
             else
             // proc only
             {
+                proc_done = 0;
+
                 for( ;; )
                 {
-                    if( 0 == ( proc_batch = soque_proc_open( sh, 64, &proc_index ) ) )
+                    if( 0 == ( proc_batch = soque_proc_open( sh, sts->help_batch, &proc_index ) ) )
                         break;
 
                     sh->proc_cb( sh->cb_arg, proc_batch, proc_index );
 
                     soque_proc_done( sh, proc_batch, proc_index );
-                    orchestra_work( sts );
+                    sts->orchestra_work();
 
-                    if( proc_batch == 64 )
+                    proc_done += proc_batch;
+
+                    if( proc_done >= sts->help_batch )
                         break;
                 }
             }
@@ -528,7 +543,7 @@ struct SOQUE_THREADS
     {
         shutdown = 1;
 
-        for( int i = 0; i < threads_count; i++ )
+        for( unsigned i = 0; i < threads_count; i++ )
             vt[i].join();
     }
 
@@ -538,14 +553,14 @@ struct SOQUE_THREADS
     }
 };
 
-SOQUE_THREADS_HANDLE SOQUE_CALL soque_threads_open( int threads_count, SOQUE_HANDLE * shs, int shs_count )
+SOQUE_THREADS_HANDLE SOQUE_CALL soque_threads_open( unsigned threads_count, char bind, SOQUE_HANDLE * shs, unsigned shs_count )
 {
     SOQUE_THREADS_HANDLE sth = (SOQUE_THREADS_HANDLE)malloc( sizeof( SOQUE_THREADS ) );
 
     if( !sth )
         return NULL;
 
-    if( !sth->init( threads_count, shs, shs_count ) )
+    if( !sth->init( threads_count, bind, shs, shs_count ) )
     {
         free( sth );
         return NULL;
@@ -554,13 +569,19 @@ SOQUE_THREADS_HANDLE SOQUE_CALL soque_threads_open( int threads_count, SOQUE_HAN
     return sth;
 }
 
+void SOQUE_CALL soque_threads_tune( SOQUE_THREADS_HANDLE sth, unsigned fast_batch, unsigned help_batch )
+{
+    sth->fast_batch = fast_batch;
+    sth->help_batch = help_batch;
+}
+
 void SOQUE_CALL soque_threads_done( SOQUE_THREADS_HANDLE sth )
 {
     sth->cleanup();
     free( sth );
 }
 
-SOQUE_FRAMEWORK * SOQUE_CALL soque_framework()
+SOQUE_FRAMEWORK * soque_framework()
 {
     static SOQUE_FRAMEWORK soq;
 
@@ -574,6 +595,7 @@ SOQUE_FRAMEWORK * SOQUE_CALL soque_framework()
     soq.soque_pop = soque_pop;
     soq.soque_done = soque_done;
     soq.soque_threads_open = soque_threads_open;
+    soq.soque_threads_tune = soque_threads_tune;
     soq.soque_threads_done = soque_threads_done;
 
     return &soq;

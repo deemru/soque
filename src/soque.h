@@ -20,27 +20,28 @@ extern "C" {
 #endif // _WIN32
 #define SOQUE_GET_FRAMEWORK "soque_framework"
 
-    typedef int ( SOQUE_CALL * soque_push_cb )( void * cb_arg, int push_count, int waitable );
-    typedef void ( SOQUE_CALL * soque_proc_cb )( void * cb_arg, int proc_count, int proc_index );
-    typedef int ( SOQUE_CALL * soque_pop_cb )( void * cb_arg, int pop_count, int waitable );
+    typedef int ( SOQUE_CALL * soque_push_cb )( void * cb_arg, unsigned batch, char waitable );
+    typedef void ( SOQUE_CALL * soque_proc_cb )( void * cb_arg, unsigned batch, unsigned index );
+    typedef int ( SOQUE_CALL * soque_pop_cb )( void * cb_arg, unsigned batch, char waitable );
 
     typedef struct SOQUE * SOQUE_HANDLE;
 
-    typedef SOQUE_HANDLE ( SOQUE_CALL * soque_open_t )( int size, void * cb_arg, soque_push_cb, soque_proc_cb, soque_pop_cb );
-    typedef int ( SOQUE_CALL * soque_push_t )( SOQUE_HANDLE, int push_count );
-    typedef int ( SOQUE_CALL * soque_proc_open_t )( SOQUE_HANDLE, int proc_count, int * proc_index );
-    typedef int ( SOQUE_CALL * soque_proc_done_t )( SOQUE_HANDLE, int proc_count, int proc_index );
-    typedef int ( SOQUE_CALL * soque_pop_t )( SOQUE_HANDLE, int pop_count );
+    typedef SOQUE_HANDLE ( SOQUE_CALL * soque_open_t )( unsigned size, void * cb_arg, soque_push_cb, soque_proc_cb, soque_pop_cb );
+    typedef unsigned ( SOQUE_CALL * soque_push_t )( SOQUE_HANDLE, unsigned batch );
+    typedef unsigned ( SOQUE_CALL * soque_proc_open_t )( SOQUE_HANDLE, unsigned batch, unsigned * index );
+    typedef char ( SOQUE_CALL * soque_proc_done_t )( SOQUE_HANDLE, unsigned batch, unsigned index );
+    typedef unsigned ( SOQUE_CALL * soque_pop_t )( SOQUE_HANDLE, unsigned batch );
     typedef void ( SOQUE_CALL * soque_done_t )( SOQUE_HANDLE );
 
     typedef struct SOQUE_THREADS * SOQUE_THREADS_HANDLE;
 
-    typedef SOQUE_THREADS_HANDLE ( SOQUE_CALL * soque_threads_open_t )( int threads, SOQUE_HANDLE * shs, int shs_count );
+    typedef SOQUE_THREADS_HANDLE ( SOQUE_CALL * soque_threads_open_t )( unsigned threads, char bind, SOQUE_HANDLE * shs, unsigned shs_count );
+    typedef void ( SOQUE_CALL * soque_threads_tune_t )( SOQUE_THREADS_HANDLE, unsigned fast_batch, unsigned help_batch );
     typedef void ( SOQUE_CALL * soque_threads_done_t )( SOQUE_THREADS_HANDLE );
 
     typedef struct {
-        int soque_major;
-        int soque_minor;
+        unsigned soque_major;
+        unsigned soque_minor;
         soque_open_t soque_open;
         soque_push_t soque_push;
         soque_proc_open_t soque_proc_open;
@@ -48,11 +49,12 @@ extern "C" {
         soque_pop_t soque_pop;
         soque_done_t soque_done;
         soque_threads_open_t soque_threads_open;
+        soque_threads_tune_t soque_threads_tune;
         soque_threads_done_t soque_threads_done;
     } SOQUE_FRAMEWORK;
 
-    typedef SOQUE_FRAMEWORK * ( SOQUE_CALL * soque_framework_t )();
-    SOQUE_API SOQUE_FRAMEWORK * SOQUE_CALL soque_framework();
+    typedef SOQUE_FRAMEWORK * ( * soque_framework_t )();
+    SOQUE_API SOQUE_FRAMEWORK * soque_framework();
 
 #ifdef __cplusplus
 }

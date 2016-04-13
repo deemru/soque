@@ -12,7 +12,7 @@
 
 static volatile long long g_proc_count;
 
-static int SOQUE_CALL empty_soque_cb( void * arg, int batch, int waitable )
+static int SOQUE_CALL empty_soque_cb( void * arg, unsigned batch, char waitable )
 {
     (void)arg;
     (void)batch;
@@ -21,7 +21,7 @@ static int SOQUE_CALL empty_soque_cb( void * arg, int batch, int waitable )
     return batch;
 }
 
-static void SOQUE_CALL empty_soque_proc_cb( void * arg, int batch, int index )
+static void SOQUE_CALL empty_soque_proc_cb( void * arg, unsigned batch, unsigned index )
 {
     (void)arg;
     (void)batch;
@@ -86,9 +86,14 @@ int soque_load()
 int main( int argc, char ** argv )
 {
     SOQUE_HANDLE * q;
+    SOQUE_THREADS_HANDLE qt;
     int queue_size = 2048;
-    int threads_count = 1;
     int queue_count = 1;
+    int threads_count = 1;
+    char bind = 1;
+    unsigned fast_batch = 64;
+    unsigned help_batch = 64;
+
     long long speed_save;
     double speed_change;
     double speed_approx_change;
@@ -97,26 +102,36 @@ int main( int argc, char ** argv )
     int n = 0;
     int i;
 
-    if( argc == 4 )
-    {
+    if( argc > 1 )
         queue_size = atoi( argv[1] );
+    if( argc > 2 )
         queue_count = atoi( argv[2] );
+    if( argc > 3 )
         threads_count = atoi( argv[3] );
-    }
+    if( argc > 4 )
+        bind = (char)atoi( argv[4] );
+    if( argc > 5 )
+        fast_batch = atoi( argv[5] );
+    if( argc > 6 )
+        help_batch = atoi( argv[6] );
 
     if( !soque_load() )
         return 1;
 
     printf( "queue_size = %d\n", queue_size );
     printf( "queue_count = %d\n", queue_count );
-    printf( "threads_count = %d\n\n", threads_count );
+    printf( "threads_count = %d\n", threads_count );
+    printf( "bind = %d\n", bind );
+    printf( "fast_batch = %d\n", fast_batch );
+    printf( "help_batch = %d\n\n", help_batch );
     
     q = malloc( queue_count * sizeof( void * ) );
 
     for( i = 0; i < queue_count; i++ )
         q[i] = soq->soque_open( queue_size, NULL, push_cb, proc_cb, pop_cb );
 
-    soq->soque_threads_open( threads_count, q, queue_count );
+    qt = soq->soque_threads_open( threads_count, bind, q, queue_count );
+    soq->soque_threads_tune( qt, fast_batch, help_batch );
 
     SLEEP_1_SEC; // warming
 
