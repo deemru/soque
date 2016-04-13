@@ -352,7 +352,7 @@ struct SOQUE_THREADS
     unsigned wait_signal;
     unsigned fast_batch;
     unsigned help_batch;
-    std::atomic_uint32_t threads_sync;
+    std::atomic<unsigned> threads_sync;
     void * mem;
     SOQUE_THREAD * t;
     std::vector<std::thread> vt;
