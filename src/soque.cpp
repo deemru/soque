@@ -581,23 +581,21 @@ void SOQUE_CALL soque_threads_done( SOQUE_THREADS_HANDLE sth )
     free( sth );
 }
 
-SOQUE_FRAMEWORK * soque_framework()
+const SOQUE_FRAMEWORK * soque_framework()
 {
-    static SOQUE_FRAMEWORK soq;
-
-    soq.soque_major = SOQUE_MAJOR;
-    soq.soque_minor = SOQUE_MINOR;
-
-    soq.soque_open = soque_open;
-    soq.soque_push = soque_push;
-    soq.soque_proc_open = soque_proc_open;
-    soq.soque_proc_done = soque_proc_done;
-    soq.soque_pop = soque_pop;
-    soq.soque_done = soque_done;
-    soq.soque_threads_open = soque_threads_open;
-    soq.soque_threads_tune = soque_threads_tune;
-    soq.soque_threads_done = soque_threads_done;
+    static const SOQUE_FRAMEWORK soq = {
+        SOQUE_MAJOR,
+        SOQUE_MINOR,
+        soque_open,
+        soque_push,
+        soque_proc_open,
+        soque_proc_done,
+        soque_pop,
+        soque_done,
+        soque_threads_open,
+        soque_threads_tune,
+        soque_threads_done,
+    };
 
     return &soq;
 }
-

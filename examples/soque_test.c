@@ -8,6 +8,7 @@
 #include <dlfcn.h>
 #endif
 
+#define SOQUE_WITH_LOADER
 #include "soque.h"
 
 static volatile long long g_proc_count;
@@ -40,48 +41,9 @@ static soque_pop_cb pop_cb = &empty_soque_cb;
 
 #ifdef _WIN32
 #define SLEEP_1_SEC Sleep( 1000 )
-#define LIBLOAD( name ) LoadLibraryA( name )
-#define LIBFUNC( lib, name ) (UINT_PTR)GetProcAddress( lib, name )
 #else
 #define SLEEP_1_SEC sleep( 1 )
-#define LIBLOAD( name ) dlopen( name, RTLD_LAZY )
-#define LIBFUNC( lib, name ) dlsym( lib, name )
 #endif
-
-static const SOQUE_FRAMEWORK * soq;
-
-int soque_load()
-{
-    soque_framework_t soque_get_framework;
-
-    void * lib = LIBLOAD( SOQUE_LIBRARY );
-
-    if( !lib )
-    {
-        printf( "ERROR: \"%s\" not loaded\n", SOQUE_LIBRARY );
-        return 0;
-    }
-
-    soque_get_framework = (soque_framework_t)LIBFUNC( lib, SOQUE_GET_FRAMEWORK );
-
-    if( !soque_get_framework )
-    {
-        printf( "ERROR: \"%s\" not found in \"%s\"\n", SOQUE_GET_FRAMEWORK, SOQUE_LIBRARY );
-        return 0;
-    }
-
-    soq = soque_get_framework();
-
-    if( soq->soque_major < SOQUE_MAJOR )
-    {
-        printf( "ERROR: soque version %d.%d < %d.%d\n", soq->soque_major, soq->soque_minor, SOQUE_MAJOR, SOQUE_MINOR );
-        return 0;
-    }
-
-    printf( "%s (%d.%d) loaded\n", SOQUE_LIBRARY, soq->soque_major, soq->soque_minor );
-
-    return 1;
-}
 
 int main( int argc, char ** argv )
 {
