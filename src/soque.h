@@ -103,10 +103,12 @@ static char soque_load()
         return 0;
     }
 
+#if SOQUE_MINOR
     if( soq->soque_minor < SOQUE_MINOR )
     {
         printf( "WARNING: soque minor version %d.%d < %d.%d\n", soq->soque_major, soq->soque_minor, SOQUE_MAJOR, SOQUE_MINOR );
     }
+#endif
 
     printf( "SUCCESS: %s (%d.%d) loaded\n", SOQUE_LIBRARY, soq->soque_major, soq->soque_minor );
 
