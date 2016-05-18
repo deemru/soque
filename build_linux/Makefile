@@ -1,10 +1,10 @@
 all: libsoque.so soque_test
 
 libsoque.so:
-	g++ -std=c++11 -fPIC -shared -lpthread -g -O2 -Wall -Werror -Wno-unused-function ../src/soque.cpp -o libsoque.so
+	g++ -Wall -Wl,--no-as-needed -pthread -std=c++11 -fPIC -shared -g -O2 -Werror -Wno-unused-function ../src/soque.cpp -o libsoque.so
 
 soque_test:
-	gcc -I../src -g -O2 -Wall -Werror -Wno-unused-function ../examples/soque_test.c -ldl -o soque_test
+	gcc -I../src -g -O2 -Wall -Werror -Wno-unused-function ../examples/soque_test.c -o soque_test -ldl
 
 install: libsoque.so soque_test
 	install -D libsoque.so /usr/lib/libsoque.so
