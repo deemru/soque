@@ -404,14 +404,11 @@ struct SOQUE_THREADS
         return 1;
     }
 
-    static const unsigned SOQUE_THREAD_SPEED_PING = 1000;
-
     static void orchestra_thread( SOQUE_THREADS * sts )
     {
         unsigned count = sts->threads_count;
         unsigned i;
         std::vector<unsigned> proc_meter_last;
-        unsigned threshold = sts->threshold;
         unsigned workers_count;
 
         proc_meter_last.resize( count );        
@@ -419,7 +416,7 @@ struct SOQUE_THREADS
 
         for( ; !sts->shutdown; )
         {
-            std::this_thread::sleep_for( std::chrono::milliseconds( SOQUE_THREAD_SPEED_PING ) );
+            std::this_thread::sleep_for( std::chrono::milliseconds( sts->reaction ) );
 
             std::chrono::high_resolution_clock::time_point time_now = std::chrono::high_resolution_clock::now();
             std::chrono::duration<double> time_span = std::chrono::duration_cast<std::chrono::duration<double>>( time_now - time_last );
@@ -432,7 +429,7 @@ struct SOQUE_THREADS
                 unsigned speed_point = sts->speed_meter[i];
                 unsigned speed = (unsigned)( ( speed_point - proc_meter_last[i] ) / time_span.count() );
                  
-                if( speed > threshold )
+                if( speed > sts->threshold )
                     workers_count++;
 
                 proc_meter_last[i] = speed_point;                
@@ -458,7 +455,7 @@ struct SOQUE_THREADS
         unsigned soques_count = sts->soques_count;
         SOQUE_HANDLE * soques_handles = &sts->soques_handles[0];
         unsigned * proc_meter = &sts->speed_meter[thread_id];
-        unsigned wake_point = thread_id < soques_count ? 0 : thread_id - soques_count;
+        unsigned wake_point = thread_id < soques_count ? 0 : thread_id - soques_count + 1;
         SOQUE_HANDLE sh;
 
         sts->syncstart();
@@ -543,7 +540,7 @@ struct SOQUE_THREADS
                 i = 0;
 
                 if( wake_point && sts->workers_count < wake_point )
-                    std::this_thread::sleep_for( std::chrono::milliseconds( SOQUE_THREAD_SPEED_PING ) );
+                    std::this_thread::sleep_for( std::chrono::milliseconds( sts->reaction ) );
             }
         }
     }
