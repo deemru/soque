@@ -55,6 +55,8 @@ int main( int argc, char ** argv )
     char bind = 1;
     unsigned fast_batch = 64;
     unsigned help_batch = 64;
+    unsigned threshold = 10000;
+    unsigned reaction = 50;
 
     long long speed_save;
     double speed_change;
@@ -76,6 +78,10 @@ int main( int argc, char ** argv )
         fast_batch = atoi( argv[5] );
     if( argc > 6 )
         help_batch = atoi( argv[6] );
+    if( argc > 7 )
+        threshold = atoi( argv[7] );
+    if( argc > 8 )
+        reaction = atoi( argv[8] );
 
     if( !soque_load() )
         return 1;
@@ -85,7 +91,9 @@ int main( int argc, char ** argv )
     printf( "threads_count = %d\n", threads_count );
     printf( "bind = %d\n", bind );
     printf( "fast_batch = %d\n", fast_batch );
-    printf( "help_batch = %d\n\n", help_batch );
+    printf( "help_batch = %d\n", help_batch );
+    printf( "threshold = %d\n", threshold );
+    printf( "reaction = %d\n\n", reaction );
     
     q = malloc( queue_count * sizeof( void * ) );
 
@@ -93,7 +101,7 @@ int main( int argc, char ** argv )
         q[i] = soq->soque_open( queue_size, NULL, push_cb, proc_cb, pop_cb );
 
     qt = soq->soque_threads_open( threads_count, bind, q, queue_count );
-    soq->soque_threads_tune( qt, fast_batch, help_batch );
+    soq->soque_threads_tune( qt, fast_batch, help_batch, threshold, reaction );
 
     SLEEP_1_SEC; // warming
 

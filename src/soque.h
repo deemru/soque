@@ -1,8 +1,8 @@
 #ifndef SOQUE_H
 #define SOQUE_H
 
-#define SOQUE_MAJOR 1
-#define SOQUE_MINOR 0 
+#define SOQUE_MAJOR 0
+#define SOQUE_MINOR 1
 
 #ifdef __cplusplus
 extern "C" {
@@ -39,7 +39,7 @@ extern "C" {
     typedef struct SOQUE_THREADS * SOQUE_THREADS_HANDLE;
 
     typedef SOQUE_THREADS_HANDLE ( SOQUE_CALL * soque_threads_open_t )( unsigned threads, char bind, SOQUE_HANDLE * shs, unsigned shs_count );
-    typedef void ( SOQUE_CALL * soque_threads_tune_t )( SOQUE_THREADS_HANDLE, unsigned fast_batch, unsigned help_batch );
+    typedef void ( SOQUE_CALL * soque_threads_tune_t )( SOQUE_THREADS_HANDLE, unsigned fast_batch, unsigned help_batch, unsigned threshold, unsigned reaction );
     typedef void ( SOQUE_CALL * soque_threads_done_t )( SOQUE_THREADS_HANDLE );
 
     typedef struct {

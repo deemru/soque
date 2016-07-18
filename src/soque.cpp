@@ -336,26 +336,20 @@ void SOQUE_CALL soque_done( SOQUE_HANDLE sh )
     free( mem );
 }
 
-struct SOQUE_THREAD
-{
-    CACHELINE_ALIGN( SOQUE_HANDLE sh );
-    std::atomic_bool guard;
-    CACHELINE_ALIGN( char aligner[0] );
-};
-
 struct SOQUE_THREADS
 {
+    std::vector<SOQUE_HANDLE> soques_handles;
     char shutdown;
     unsigned threads_count;
     unsigned soques_count;
     unsigned workers_count;
     unsigned fast_batch;
     unsigned help_batch;
+    unsigned threshold;
+    unsigned reaction;
     std::atomic<unsigned> threads_sync;
-    void * mem;
-    SOQUE_THREAD * t;
-    std::vector<std::thread> vt;
-    std::vector<char> workers;
+    std::vector<std::thread> threads;
+    std::vector<unsigned> speed_meter;
 
     void sit_on_cpu( std::thread & thread )
     {
@@ -384,77 +378,67 @@ struct SOQUE_THREADS
     {
         memset( this, 0, sizeof( SOQUE_THREADS ) );
         threads_count = t_count;
+        threads_sync = threads_count;
         soques_count = sh_count;
-        workers_count = 0;
         fast_batch = 16;
         help_batch = 16;
-        threads_sync = threads_count;
-        workers.resize( threads_count );
+        threshold = 10000;
+        reaction = 50;
 
-        mem = malloc( sizeof( SOQUE_THREAD ) * sh_count + CACHELINE_SIZE );
-        
-        if( mem == NULL )
-            return 0;
-
-        t = CACHELINE_SHIFT( mem, SOQUE_THREAD * );
+        speed_meter.resize( threads_count );
 
         for( unsigned i = 0; i < sh_count; i++ )
-        {
-            memset( &t[i], 0, sizeof( SOQUE_THREAD ) );
-            t[i].sh = sh[i];
-        }
+            soques_handles.push_back( sh[i] );
 
         for( unsigned i = 0; i < threads_count; i++ )
-            vt.push_back( std::thread( &soque_thread, this, i ) );
+            threads.push_back( std::thread( &soque_thread, this, i ) );
 
-        vt.push_back( std::thread( &orchestra_thread, this ) );
+        threads.push_back( std::thread( &orchestra_thread, this ) );
 
         if( bind )
         {
             for( unsigned i = 0; i < threads_count; i++ )
-                sit_on_cpu( vt[i] );
+                sit_on_cpu( threads[i] );
         }
 
         return 1;
     }
 
-    void orchestra_work( unsigned thread_id )
-    {
-        workers[thread_id] = 1;
-    }
+    static const unsigned SOQUE_THREAD_SPEED_PING = 1000;
 
     static void orchestra_thread( SOQUE_THREADS * sts )
     {
-        char * workers = &sts->workers[0];
-        size_t wsize = sizeof( sts->workers[0] ) * sts->threads_count;
-        unsigned wcount = sts->threads_count;
+        unsigned count = sts->threads_count;
         unsigned i;
-        unsigned real_workers;
-        unsigned real_workers_last = 0;
+        std::vector<unsigned> proc_meter_last;
+        unsigned threshold = sts->threshold;
+        unsigned workers_count;
+
+        proc_meter_last.resize( count );        
+        std::chrono::high_resolution_clock::time_point time_last = std::chrono::high_resolution_clock::now();
 
         for( ; !sts->shutdown; )
         {
-            memset( workers, 0, wsize );
-            std::this_thread::sleep_for( std::chrono::milliseconds( 10 ) );
+            std::this_thread::sleep_for( std::chrono::milliseconds( SOQUE_THREAD_SPEED_PING ) );
 
-            for( i = 0, real_workers = 0; i < wcount; i++ )
+            std::chrono::high_resolution_clock::time_point time_now = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double> time_span = std::chrono::duration_cast<std::chrono::duration<double>>( time_now - time_last );
+
+            time_last = time_now;
+            workers_count = 0;
+
+            for( i = 0; i < count; i++ )
             {
-                if( workers[i] )
-                    real_workers++;
+                unsigned speed_point = sts->speed_meter[i];
+                unsigned speed = (unsigned)( ( speed_point - proc_meter_last[i] ) / time_span.count() );
+                 
+                if( speed > threshold )
+                    workers_count++;
+
+                proc_meter_last[i] = speed_point;                
             }
 
-            {
-                if( real_workers_last > real_workers )
-                {
-                    real_workers_last--;
-                    sts->workers_count = real_workers_last;
-                }
-                else if( real_workers && real_workers_last < wcount )
-                {
-                    real_workers_last++;
-                    sts->workers_count = real_workers_last;
-                }
-            }
+            sts->workers_count = workers_count;
         }
     }
 
@@ -467,32 +451,30 @@ struct SOQUE_THREADS
 
     static void soque_thread( SOQUE_THREADS * sts, unsigned thread_id )
     {
-        unsigned i = 0;
         unsigned io_batch;
         unsigned proc_batch;
         unsigned proc_index;
         unsigned proc_done;
-        unsigned qcount = sts->soques_count;
-        unsigned tcount = sts->threads_count;
-        unsigned wakepoint = thread_id - qcount;
-        char waitable = thread_id >= qcount;
+        unsigned soques_count = sts->soques_count;
+        SOQUE_HANDLE * soques_handles = &sts->soques_handles[0];
+        unsigned * proc_meter = &sts->speed_meter[thread_id];
+        unsigned wake_point = thread_id < soques_count ? 0 : thread_id - soques_count;
+        SOQUE_HANDLE sh;
 
-        for( sts->syncstart(); !sts->shutdown; )
+        sts->syncstart();
+
+        for( unsigned i = 0; sts->shutdown == 0; )
         {
-            SOQUE_HANDLE sh = sts->t[i].sh;
+            sh = soques_handles[i];
 
-            if( waitable && wakepoint >= sts->workers_count )
-                std::this_thread::sleep_for( std::chrono::milliseconds( 5 ) );
-
-            // ... pop > push > proc ...
-            if( i == thread_id )
+            if( i == thread_id ) // main thread on soque ( pop > push > proc > repeat not empty )
             for( ;; )
             {
                 io_batch = soque_pop( sh, 0 );
 
                 if( io_batch )
                 {
-                    io_batch = sh->pop_cb( sh->cb_arg, io_batch, tcount - sts->workers_count >= qcount );
+                    io_batch = sh->pop_cb( sh->cb_arg, io_batch, sts->workers_count == 0 );
 
                     if( io_batch )
                         soque_pop( sh, io_batch );
@@ -502,7 +484,7 @@ struct SOQUE_THREADS
 
                 if( io_batch )
                 {
-                    io_batch = sh->push_cb( sh->cb_arg, io_batch, tcount - sts->workers_count >= qcount );
+                    io_batch = sh->push_cb( sh->cb_arg, io_batch, sts->workers_count == 0 );
 
                     if( io_batch )
                         soque_push( sh, io_batch );
@@ -522,19 +504,18 @@ struct SOQUE_THREADS
                     proc_done += proc_batch;
 
                     if( proc_done >= sts->fast_batch )
-                    {
-                        sts->orchestra_work( thread_id );
                         break;
-                    }
                 }
+
+                if( proc_done )
+                    proc_meter[0] += proc_done;
 
                 if( io_batch )
                     continue;
 
                 break;
             }
-            else
-            // proc only
+            else // helper thread on soque (proc only)
             {
                 proc_done = 0;
 
@@ -550,15 +531,20 @@ struct SOQUE_THREADS
                     proc_done += proc_batch;
 
                     if( proc_done >= sts->help_batch )
-                    {
-                        sts->orchestra_work( thread_id );
                         break;
-                    }
                 }
+
+                if( proc_done )
+                    proc_meter[0] += proc_done;
             }
 
-            if( ++i == sts->soques_count )
+            if( ++i == soques_count )
+            {
                 i = 0;
+
+                if( wake_point && sts->workers_count < wake_point )
+                    std::this_thread::sleep_for( std::chrono::milliseconds( SOQUE_THREAD_SPEED_PING ) );
+            }
         }
     }
 
@@ -567,7 +553,7 @@ struct SOQUE_THREADS
         shutdown = 1;
 
         for( unsigned i = 0; i < threads_count; i++ )
-            vt[i].join();
+            threads[i].join();
     }
 
     ~SOQUE_THREADS()
@@ -592,10 +578,12 @@ SOQUE_THREADS_HANDLE SOQUE_CALL soque_threads_open( unsigned threads_count, char
     return sth;
 }
 
-void SOQUE_CALL soque_threads_tune( SOQUE_THREADS_HANDLE sth, unsigned fast_batch, unsigned help_batch )
+void SOQUE_CALL soque_threads_tune( SOQUE_THREADS_HANDLE sth, unsigned fast_batch, unsigned help_batch, unsigned threshold, unsigned reaction )
 {
     sth->fast_batch = fast_batch;
     sth->help_batch = help_batch;
+    sth->threshold = threshold;
+    sth->reaction = reaction;
 }
 
 void SOQUE_CALL soque_threads_done( SOQUE_THREADS_HANDLE sth )
