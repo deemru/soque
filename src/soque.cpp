@@ -502,7 +502,7 @@ struct SOQUE_THREADS
                 if( io_batch )
                     continue;
 
-                break;
+                //break;
             }
             else // helper thread on soque (proc only)
             {
