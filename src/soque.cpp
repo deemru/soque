@@ -451,10 +451,10 @@ struct SOQUE_THREADS
         unsigned io_batch;
         unsigned proc_batch;
         unsigned proc_index;
-        unsigned proc_done;
         unsigned soques_count = sts->soques_count;
         SOQUE_HANDLE * soques_handles = &sts->soques_handles[0];
         unsigned * proc_meter = &sts->speed_meter[thread_id];
+        unsigned proc_meter_cache = *proc_meter;
         unsigned wake_point = thread_id < soques_count ? 0 : thread_id - soques_count + 1;
         SOQUE_HANDLE sh;
 
@@ -487,25 +487,17 @@ struct SOQUE_THREADS
                         soque_push( sh, io_batch );
                 }
 
-                proc_done = 0;
+                proc_batch = soque_proc_open( sh, sts->fast_batch, &proc_index );
 
-                for( ;; )
+                if( proc_batch )
                 {
-                    if( 0 == ( proc_batch = soque_proc_open( sh, sts->fast_batch, &proc_index ) ) )
-                        break;
-
                     sh->proc_cb( sh->cb_arg, proc_batch, proc_index );
 
                     soque_proc_done( sh, proc_batch, proc_index );
 
-                    proc_done += proc_batch;
-
-                    if( proc_done >= sts->fast_batch )
-                        break;
+                    proc_meter_cache += proc_batch;
+                    *proc_meter = proc_meter_cache;
                 }
-
-                if( proc_done )
-                    proc_meter[0] += proc_done;
 
                 if( io_batch )
                     continue;
@@ -514,25 +506,17 @@ struct SOQUE_THREADS
             }
             else // helper thread on soque (proc only)
             {
-                proc_done = 0;
+                proc_batch = soque_proc_open( sh, sts->help_batch, &proc_index );
 
-                for( ;; )
+                if( proc_batch )
                 {
-                    if( 0 == ( proc_batch = soque_proc_open( sh, sts->help_batch, &proc_index ) ) )
-                        break;
-
                     sh->proc_cb( sh->cb_arg, proc_batch, proc_index );
 
                     soque_proc_done( sh, proc_batch, proc_index );
 
-                    proc_done += proc_batch;
-
-                    if( proc_done >= sts->help_batch )
-                        break;
+                    proc_meter_cache += proc_batch;
+                    *proc_meter = proc_meter_cache;
                 }
-
-                if( proc_done )
-                    proc_meter[0] += proc_done;
             }
 
             if( ++i == soques_count )
