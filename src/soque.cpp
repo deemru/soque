@@ -125,9 +125,12 @@ void SOQUE::done()
 
 char SOQUE::lock()
 {
-    bool f = false;
-    if( soque_lock == false && soque_lock.compare_exchange_weak( f, true ) )
-        return 1;
+    if( soque_lock == false )
+    {
+        bool f = false;
+        if( soque_lock.compare_exchange_weak( f, true ) )
+            return 1;
+    }
 
     return 0;
 }
@@ -155,7 +158,7 @@ unsigned SOQUE::push( unsigned push_count )
         return push_max;
 
     if( push_count > push_max )
-        push_count = push_max; // надо бы считать _fixed
+        push_count = push_max;
 
     push_next = push_here + push_count;
 
@@ -408,7 +411,7 @@ struct SOQUE_THREADS
         soques_count = sh_count;
         batch = 16;
         threshold = 10000;
-        reaction = 50;
+        reaction = 100;
         speed_meter.resize( threads_count );
 
         for( unsigned i = 0; i < sh_count; i++ )
@@ -457,9 +460,6 @@ struct SOQUE_THREADS
                     workers_count++;
 
                 proc_meter_last[i] = speed_point;
-
-                
-                //printf( "(%d) %s", speed/1000, i + 1 == count ? "\n" : "" );
             }
 
             sts->workers_count = workers_count;
