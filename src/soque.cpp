@@ -350,6 +350,7 @@ struct SOQUE_THREADS
     std::atomic<unsigned> threads_sync;
     std::vector<std::thread> threads;
     std::vector<unsigned> speed_meter;
+    std::atomic_bool soques_locks[2];
 
     void sit_on_cpu( std::thread & thread )
     {
@@ -384,11 +385,13 @@ struct SOQUE_THREADS
         help_batch = 16;
         threshold = 10000;
         reaction = 50;
-
         speed_meter.resize( threads_count );
 
         for( unsigned i = 0; i < sh_count; i++ )
+        {
             soques_handles.push_back( sh[i] );
+            soques_locks[i] = false;
+        }
 
         for( unsigned i = 0; i < threads_count; i++ )
             threads.push_back( std::thread( &soque_thread, this, i ) );
@@ -432,7 +435,10 @@ struct SOQUE_THREADS
                 if( speed > sts->threshold )
                     workers_count++;
 
-                proc_meter_last[i] = speed_point;                
+                proc_meter_last[i] = speed_point;
+
+                
+                //printf( "(%d) %s", speed/1000, i + 1 == count ? "\n" : "" );
             }
 
             sts->workers_count = workers_count;
@@ -457,6 +463,7 @@ struct SOQUE_THREADS
         unsigned proc_meter_cache = *proc_meter;
         unsigned wake_point = thread_id < soques_count ? 0 : thread_id - soques_count + 1;
         SOQUE_HANDLE sh;
+        bool f;
 
         sts->syncstart();
 
@@ -464,8 +471,9 @@ struct SOQUE_THREADS
         {
             sh = soques_handles[i];
 
-            if( i == thread_id ) // main thread on soque ( pop > push > proc > repeat not empty )
-            for( ;; )
+
+            f = false;
+            if( sts->soques_locks[i] == false && sts->soques_locks[i].compare_exchange_weak( f, true ) )
             {
                 io_batch = soque_pop( sh, 0 );
 
@@ -487,24 +495,8 @@ struct SOQUE_THREADS
                         soque_push( sh, io_batch );
                 }
 
-                proc_batch = soque_proc_open( sh, sts->fast_batch, &proc_index );
-
-                if( proc_batch )
-                {
-                    sh->proc_cb( sh->cb_arg, proc_batch, proc_index );
-
-                    soque_proc_done( sh, proc_batch, proc_index );
-
-                    proc_meter_cache += proc_batch;
-                    *proc_meter = proc_meter_cache;
-                }
-
-                if( io_batch )
-                    continue;
-
-                //break;
+                sts->soques_locks[i] = false;
             }
-            else // helper thread on soque (proc only)
             {
                 proc_batch = soque_proc_open( sh, sts->help_batch, &proc_index );
 

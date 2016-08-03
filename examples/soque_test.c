@@ -12,12 +12,26 @@
 #include "soque.h"
 
 static volatile long long g_proc_count;
+unsigned long long hard = 1000;
+
+#ifdef _WIN32
+#define rdtsc() __rdtsc()
+#else
+#define rdtsc() __builtin_ia32_rdtsc()
+#endif
 
 static int SOQUE_CALL empty_soque_cb( void * arg, unsigned batch, char waitable )
 {
     (void)arg;
     (void)batch;
     (void)waitable;
+
+    if( hard )
+    {
+        unsigned long long c = rdtsc();
+        unsigned long long h = hard * batch / 10;
+        while( rdtsc() - c < h ){}
+    }
 
     return batch;
 }
@@ -33,6 +47,13 @@ static void SOQUE_CALL empty_soque_proc_cb( void * arg, unsigned batch, unsigned
 #else
     __sync_fetch_and_add( &g_proc_count, batch );
 #endif
+
+    if( hard )
+    {
+        unsigned long long c = rdtsc();
+        unsigned long long h = hard * batch;
+        while( rdtsc() - c < h ){}
+    }
 }
 
 static soque_push_cb push_cb = &empty_soque_cb;
@@ -51,7 +72,7 @@ int main( int argc, char ** argv )
     SOQUE_THREADS_HANDLE qt;
     int queue_size = 2048;
     int queue_count = 1;
-    int threads_count = 1;
+    int threads_count = 16;
     char bind = 1;
     unsigned fast_batch = 64;
     unsigned help_batch = 64;
@@ -82,6 +103,8 @@ int main( int argc, char ** argv )
         threshold = atoi( argv[7] );
     if( argc > 8 )
         reaction = atoi( argv[8] );
+    if( argc > 9 )
+        hard = atoi( argv[9] );
 
     if( !soque_load() )
         return 1;
@@ -93,7 +116,8 @@ int main( int argc, char ** argv )
     printf( "fast_batch = %d\n", fast_batch );
     printf( "help_batch = %d\n", help_batch );
     printf( "threshold = %d\n", threshold );
-    printf( "reaction = %d\n\n", reaction );
+    printf( "reaction = %d\n", reaction );
+    printf( "hard = %d\n\n", hard );
     
     q = malloc( queue_count * sizeof( void * ) );
 
