@@ -2,7 +2,7 @@
 #define SOQUE_H
 
 #define SOQUE_MAJOR 0
-#define SOQUE_MINOR 1
+#define SOQUE_MINOR 2
 
 #ifdef __cplusplus
 extern "C" {
@@ -30,26 +30,30 @@ extern "C" {
     typedef struct SOQUE * SOQUE_HANDLE;
 
     typedef SOQUE_HANDLE ( SOQUE_CALL * soque_open_t )( unsigned size, void * cb_arg, soque_push_cb, soque_proc_cb, soque_pop_cb );
+    typedef char ( SOQUE_CALL * soque_lock_t )( SOQUE_HANDLE );
     typedef unsigned ( SOQUE_CALL * soque_push_t )( SOQUE_HANDLE, unsigned batch );
     typedef unsigned ( SOQUE_CALL * soque_proc_open_t )( SOQUE_HANDLE, unsigned batch, unsigned * index );
     typedef char ( SOQUE_CALL * soque_proc_done_t )( SOQUE_HANDLE, unsigned batch, unsigned index );
     typedef unsigned ( SOQUE_CALL * soque_pop_t )( SOQUE_HANDLE, unsigned batch );
+    typedef void ( SOQUE_CALL * soque_unlock_t )( SOQUE_HANDLE );
     typedef void ( SOQUE_CALL * soque_done_t )( SOQUE_HANDLE );
 
     typedef struct SOQUE_THREADS * SOQUE_THREADS_HANDLE;
 
     typedef SOQUE_THREADS_HANDLE ( SOQUE_CALL * soque_threads_open_t )( unsigned threads, char bind, SOQUE_HANDLE * shs, unsigned shs_count );
-    typedef void ( SOQUE_CALL * soque_threads_tune_t )( SOQUE_THREADS_HANDLE, unsigned fast_batch, unsigned help_batch, unsigned threshold, unsigned reaction );
+    typedef void ( SOQUE_CALL * soque_threads_tune_t )( SOQUE_THREADS_HANDLE, unsigned batch, unsigned threshold, unsigned reaction );
     typedef void ( SOQUE_CALL * soque_threads_done_t )( SOQUE_THREADS_HANDLE );
 
     typedef struct {
         unsigned soque_major;
         unsigned soque_minor;
         soque_open_t soque_open;
+        soque_lock_t soque_lock;
         soque_push_t soque_push;
         soque_proc_open_t soque_proc_open;
         soque_proc_done_t soque_proc_done;
         soque_pop_t soque_pop;
+        soque_unlock_t soque_unlock;
         soque_done_t soque_done;
         soque_threads_open_t soque_threads_open;
         soque_threads_tune_t soque_threads_tune;

@@ -85,17 +85,20 @@ struct SOQUE
     };
 
     void open( unsigned size, void * arg, soque_push_cb push, soque_proc_cb proc, soque_pop_cb pop );
+    char lock();
     unsigned push( unsigned push_count );
     unsigned proc_open( unsigned proc_count, unsigned * index );
     char proc_done( unsigned proc_count, unsigned index );
     unsigned pop( unsigned pop_count );
+    void unlock();
     void done();
 
+    CACHELINE_ALIGN( std::atomic_bool soque_lock );
+    CACHELINE_ALIGN( std::atomic_bool proc_lock );
     CACHELINE_ALIGN( unsigned push_fixed );
     CACHELINE_ALIGN( unsigned proc_run );
     CACHELINE_ALIGN( unsigned proc_fixed );
     CACHELINE_ALIGN( unsigned pop_fixed );
-    CACHELINE_ALIGN( std::atomic_bool proc_lock );
     CACHELINE_ALIGN( unsigned q_size );
     void * cb_arg;
     soque_push_cb push_cb;
@@ -118,6 +121,20 @@ void SOQUE::open( unsigned size, void * arg, soque_push_cb push, soque_proc_cb p
 void SOQUE::done()
 {
 
+}
+
+char SOQUE::lock()
+{
+    bool f = false;
+    if( soque_lock == false && soque_lock.compare_exchange_weak( f, true ) )
+        return 1;
+
+    return 0;
+}
+
+void SOQUE::unlock()
+{
+    soque_lock = false;
 }
 
 unsigned SOQUE::push( unsigned push_count )
@@ -309,6 +326,16 @@ SOQUE_HANDLE SOQUE_CALL soque_open( unsigned size, void * cb_arg, soque_push_cb 
     return sh;
 }
 
+char SOQUE_CALL soque_lock( SOQUE_HANDLE sh )
+{
+    return sh->lock();
+}
+
+void SOQUE_CALL soque_unlock( SOQUE_HANDLE sh )
+{
+    sh->unlock();
+}
+
 unsigned SOQUE_CALL soque_push( SOQUE_HANDLE sh, unsigned push_count )
 {
     return sh->push( push_count );
@@ -343,14 +370,12 @@ struct SOQUE_THREADS
     unsigned threads_count;
     unsigned soques_count;
     unsigned workers_count;
-    unsigned fast_batch;
-    unsigned help_batch;
+    unsigned batch;
     unsigned threshold;
     unsigned reaction;
     std::atomic<unsigned> threads_sync;
     std::vector<std::thread> threads;
     std::vector<unsigned> speed_meter;
-    std::atomic_bool soques_locks[2];
 
     void sit_on_cpu( std::thread & thread )
     {
@@ -381,17 +406,13 @@ struct SOQUE_THREADS
         threads_count = t_count;
         threads_sync = threads_count;
         soques_count = sh_count;
-        fast_batch = 16;
-        help_batch = 16;
+        batch = 16;
         threshold = 10000;
         reaction = 50;
         speed_meter.resize( threads_count );
 
         for( unsigned i = 0; i < sh_count; i++ )
-        {
             soques_handles.push_back( sh[i] );
-            soques_locks[i] = false;
-        }
 
         for( unsigned i = 0; i < threads_count; i++ )
             threads.push_back( std::thread( &soque_thread, this, i ) );
@@ -463,7 +484,6 @@ struct SOQUE_THREADS
         unsigned proc_meter_cache = *proc_meter;
         unsigned wake_point = thread_id < soques_count ? 0 : thread_id - soques_count + 1;
         SOQUE_HANDLE sh;
-        bool f;
 
         sts->syncstart();
 
@@ -471,9 +491,7 @@ struct SOQUE_THREADS
         {
             sh = soques_handles[i];
 
-
-            f = false;
-            if( sts->soques_locks[i] == false && sts->soques_locks[i].compare_exchange_weak( f, true ) )
+            if( soque_lock( sh ) )
             {
                 io_batch = soque_pop( sh, 0 );
 
@@ -495,10 +513,10 @@ struct SOQUE_THREADS
                         soque_push( sh, io_batch );
                 }
 
-                sts->soques_locks[i] = false;
+                soque_unlock( sh );
             }
             {
-                proc_batch = soque_proc_open( sh, sts->help_batch, &proc_index );
+                proc_batch = soque_proc_open( sh, sts->batch, &proc_index );
 
                 if( proc_batch )
                 {
@@ -551,10 +569,9 @@ SOQUE_THREADS_HANDLE SOQUE_CALL soque_threads_open( unsigned threads_count, char
     return sth;
 }
 
-void SOQUE_CALL soque_threads_tune( SOQUE_THREADS_HANDLE sth, unsigned fast_batch, unsigned help_batch, unsigned threshold, unsigned reaction )
+void SOQUE_CALL soque_threads_tune( SOQUE_THREADS_HANDLE sth, unsigned batch, unsigned threshold, unsigned reaction )
 {
-    sth->fast_batch = fast_batch;
-    sth->help_batch = help_batch;
+    sth->batch = batch;
     sth->threshold = threshold;
     sth->reaction = reaction;
 }
@@ -571,10 +588,12 @@ const SOQUE_FRAMEWORK * soque_framework()
         SOQUE_MAJOR,
         SOQUE_MINOR,
         soque_open,
+        soque_lock,
         soque_push,
         soque_proc_open,
         soque_proc_done,
         soque_pop,
+        soque_unlock,
         soque_done,
         soque_threads_open,
         soque_threads_tune,

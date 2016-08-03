@@ -12,7 +12,7 @@
 #include "soque.h"
 
 static volatile long long g_proc_count;
-unsigned long long hard = 1000;
+unsigned long long hard = 0;
 
 #ifdef _WIN32
 #define rdtsc() __rdtsc()
@@ -71,13 +71,13 @@ int main( int argc, char ** argv )
     SOQUE_HANDLE * q;
     SOQUE_THREADS_HANDLE qt;
     int queue_size = 2048;
-    int queue_count = 1;
-    int threads_count = 16;
+    int queue_count = 64;
+    int threads_count = 5;
     char bind = 1;
-    unsigned fast_batch = 64;
-    unsigned help_batch = 64;
+    unsigned batch = 64;
     unsigned threshold = 10000;
     unsigned reaction = 50;
+    hard = 1000;
 
     long long speed_save;
     double speed_change;
@@ -96,25 +96,24 @@ int main( int argc, char ** argv )
     if( argc > 4 )
         bind = (char)atoi( argv[4] );
     if( argc > 5 )
-        fast_batch = atoi( argv[5] );
+        batch = atoi( argv[5] );
     if( argc > 6 )
-        help_batch = atoi( argv[6] );
+        threshold = atoi( argv[6] );
     if( argc > 7 )
-        threshold = atoi( argv[7] );
+        reaction = atoi( argv[7] );
     if( argc > 8 )
-        reaction = atoi( argv[8] );
-    if( argc > 9 )
-        hard = atoi( argv[9] );
+        hard = atoi( argv[8] );
 
     if( !soque_load() )
         return 1;
+
+    printf( "\nsoque_test %d %d %d %d %d %d %d %d\n\n", queue_size, queue_count, threads_count, bind, batch, threshold, reaction, (int)hard );
 
     printf( "queue_size = %d\n", queue_size );
     printf( "queue_count = %d\n", queue_count );
     printf( "threads_count = %d\n", threads_count );
     printf( "bind = %d\n", bind );
-    printf( "fast_batch = %d\n", fast_batch );
-    printf( "help_batch = %d\n", help_batch );
+    printf( "batch = %d\n", batch );
     printf( "threshold = %d\n", threshold );
     printf( "reaction = %d\n", reaction );
     printf( "hard = %d\n\n", (int)hard );
@@ -125,7 +124,7 @@ int main( int argc, char ** argv )
         q[i] = soq->soque_open( queue_size, NULL, push_cb, proc_cb, pop_cb );
 
     qt = soq->soque_threads_open( threads_count, bind, q, queue_count );
-    soq->soque_threads_tune( qt, fast_batch, help_batch, threshold, reaction );
+    soq->soque_threads_tune( qt, batch, threshold, reaction );
 
     SLEEP_1_SEC; // warming
 
