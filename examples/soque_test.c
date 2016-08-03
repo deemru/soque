@@ -117,7 +117,7 @@ int main( int argc, char ** argv )
     printf( "help_batch = %d\n", help_batch );
     printf( "threshold = %d\n", threshold );
     printf( "reaction = %d\n", reaction );
-    printf( "hard = %d\n\n", hard );
+    printf( "hard = %d\n\n", (int)hard );
     
     q = malloc( queue_count * sizeof( void * ) );
 
