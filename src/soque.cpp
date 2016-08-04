@@ -20,7 +20,9 @@
 
 #include "soque.h"
 
-#define CACHELINE_SIZE 128
+#ifndef CACHELINE_SIZE
+#define CACHELINE_SIZE 64
+#endif
 #define CACHELINE_SHIFT( addr, type ) ((type)( (uintptr_t)addr + CACHELINE_SIZE - ( (uintptr_t)addr % CACHELINE_SIZE ) ))
 
 #ifdef _WIN32
