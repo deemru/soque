@@ -12,7 +12,7 @@
 #include "soque.h"
 
 static volatile long long g_proc_count;
-unsigned long long hard = 0;
+unsigned long long proctsc = 0;
 
 #ifdef _WIN32
 #define rdtsc() __rdtsc()
@@ -26,10 +26,10 @@ static int SOQUE_CALL empty_soque_cb( void * arg, unsigned batch, char waitable 
     (void)batch;
     (void)waitable;
 
-    if( hard )
+    if( proctsc )
     {
         unsigned long long c = rdtsc();
-        unsigned long long h = hard * batch / 10;
+        unsigned long long h = proctsc * batch / 16;
         while( rdtsc() - c < h ){}
     }
 
@@ -48,10 +48,10 @@ static void SOQUE_CALL empty_soque_proc_cb( void * arg, unsigned batch, unsigned
     __sync_fetch_and_add( &g_proc_count, batch );
 #endif
 
-    if( hard )
+    if( proctsc )
     {
         unsigned long long c = rdtsc();
-        unsigned long long h = hard * batch;
+        unsigned long long h = proctsc * batch;
         while( rdtsc() - c < h ){}
     }
 }
@@ -71,13 +71,13 @@ int main( int argc, char ** argv )
     SOQUE_HANDLE * q;
     SOQUE_THREADS_HANDLE qt;
     int queue_size = 2048;
-    int queue_count = 64;
-    int threads_count = 5;
+    int queue_count = 2;
+    int threads_count = 0;
     char bind = 1;
-    unsigned batch = 64;
+    unsigned batch = 16;
     unsigned threshold = 10000;
-    unsigned reaction = 50;
-    hard = 1000;
+    unsigned reaction = 100;
+    proctsc = 5000;
 
     long long speed_save;
     double speed_change;
@@ -102,21 +102,24 @@ int main( int argc, char ** argv )
     if( argc > 7 )
         reaction = atoi( argv[7] );
     if( argc > 8 )
-        hard = atoi( argv[8] );
+        proctsc = atoi( argv[8] );
 
+    printf( "STARTED: soque_test %d %d %d %d %d %d %d %d\n", queue_size, queue_count, threads_count, bind, batch, threshold, reaction, (int)proctsc );
+    
     if( !soque_load() )
         return 1;
 
-    printf( "\nsoque_test %d %d %d %d %d %d %d %d\n\n", queue_size, queue_count, threads_count, bind, batch, threshold, reaction, (int)hard );
-
-    printf( "queue_size = %d\n", queue_size );
-    printf( "queue_count = %d\n", queue_count );
-    printf( "threads_count = %d\n", threads_count );
-    printf( "bind = %d\n", bind );
-    printf( "batch = %d\n", batch );
-    printf( "threshold = %d\n", threshold );
-    printf( "reaction = %d\n", reaction );
-    printf( "hard = %d\n\n", (int)hard );
+    printf( "INFO: queue_size = %d\n", queue_size );
+    printf( "INFO: queue_count = %d\n", queue_count );
+    if( threads_count )
+        printf( "INFO: threads_count = %d\n", threads_count );
+    else
+        printf( "INFO: threads_count = max\n" );
+    printf( "INFO: bind = %d\n", bind );
+    printf( "INFO: batch = %d\n", batch );
+    printf( "INFO: threshold = %d\n", threshold );
+    printf( "INFO: reaction = %d\n", reaction );
+    printf( "INFO: proctsc = %d\n\n", (int)proctsc );
     
     q = malloc( queue_count * sizeof( void * ) );
 

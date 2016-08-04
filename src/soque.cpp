@@ -408,9 +408,9 @@ struct SOQUE_THREADS
     char init( unsigned t_count, char bind, SOQUE_HANDLE * sh, unsigned sh_count )
     {
         memset( this, 0, sizeof( SOQUE_THREADS ) );
-        threads_count = t_count;
-        threads_sync = threads_count;
         soques_count = sh_count;
+        threads_count = t_count == 0 ? SOQUE_MAX_THREADS : t_count;
+        threads_sync = threads_count;
         batch = 16;
         threshold = 10000;
         reaction = 100;
@@ -493,6 +493,22 @@ struct SOQUE_THREADS
         {
             sh = soques_handles[i];
 
+            // proc
+            {
+                proc_batch = soque_proc_open( sh, sts->batch, &proc_index );
+
+                if( proc_batch )
+                {
+                    sh->proc_cb( sh->cb_arg, proc_batch, proc_index );
+
+                    soque_proc_done( sh, proc_batch, proc_index );
+
+                    proc_meter_cache += proc_batch;
+                    *proc_meter = proc_meter_cache;
+                }
+            }
+
+            // pop > push
             if( soque_lock( sh ) )
             {
                 io_batch = soque_pop( sh, 0 );
@@ -516,19 +532,6 @@ struct SOQUE_THREADS
                 }
 
                 soque_unlock( sh );
-            }
-            {
-                proc_batch = soque_proc_open( sh, sts->batch, &proc_index );
-
-                if( proc_batch )
-                {
-                    sh->proc_cb( sh->cb_arg, proc_batch, proc_index );
-
-                    soque_proc_done( sh, proc_batch, proc_index );
-
-                    proc_meter_cache += proc_batch;
-                    *proc_meter = proc_meter_cache;
-                }
             }
 
             if( ++i == soques_count )
