@@ -458,7 +458,7 @@ struct SOQUE_THREADS
                 unsigned speed_point = sts->speed_meter[i];
                 unsigned speed = (unsigned)( ( speed_point - proc_meter_last[i] ) / time_span.count() );
                  
-                if( speed > sts->threshold )
+                if( speed > sts->threshold || ( workers_count == 0 && speed > sts->threshold / 100 ) )
                     workers_count++;
 
                 proc_meter_last[i] = speed_point;
