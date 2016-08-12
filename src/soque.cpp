@@ -477,25 +477,22 @@ struct SOQUE_THREADS
 
     static void soque_thread( SOQUE_THREADS * sts, unsigned thread_id )
     {
-        unsigned io_batch;
-        unsigned proc_batch;
-        unsigned proc_index;
         unsigned soques_count = sts->soques_count;
         SOQUE_HANDLE * soques_handles = &sts->soques_handles[0];
         unsigned * proc_meter = &sts->speed_meter[thread_id];
         unsigned proc_meter_cache = *proc_meter;
         unsigned wake_point = thread_id < soques_count ? 0 : thread_id - soques_count + 1;
-        SOQUE_HANDLE sh;
 
         sts->syncstart();
 
         for( unsigned i = 0; sts->shutdown == 0; )
         {
-            sh = soques_handles[i];
+            SOQUE_HANDLE sh = soques_handles[i];
 
-            // proc
+            // PROC
             {
-                proc_batch = soque_proc_open( sh, sts->batch, &proc_index );
+                unsigned proc_index;
+                unsigned proc_batch = soque_proc_open( sh, sts->batch, &proc_index );
 
                 if( proc_batch )
                 {
@@ -508,28 +505,40 @@ struct SOQUE_THREADS
                 }
             }
 
-            // pop > push
+            // POP + PUSH
             if( soque_lock( sh ) )
             {
-                io_batch = soque_pop( sh, 0 );
+                unsigned queued;
 
-                if( io_batch )
+                do
                 {
-                    io_batch = sh->pop_cb( sh->cb_arg, io_batch, sts->workers_count == 0 );
+                    // POP
+                    {
+                        queued = soque_pop( sh, 0 );
 
-                    if( io_batch )
-                        soque_pop( sh, io_batch );
+                        if( queued )
+                        {
+                            unsigned popped = sh->pop_cb( sh->cb_arg, queued, sts->workers_count == 0 );
+
+                            if( popped )
+                                soque_pop( sh, popped );
+                        }
+                    }
+
+                    // PUSH
+                    {
+                        unsigned available = soque_push( sh, 0 );
+
+                        if( available )
+                        {
+                            unsigned pushed = sh->push_cb( sh->cb_arg, available, queued == 0 && sts->workers_count == 0 );
+
+                            if( pushed )
+                                soque_push( sh, pushed );
+                        }
+                    }
                 }
-
-                io_batch = soque_push( sh, 0 );
-
-                if( io_batch )
-                {
-                    io_batch = sh->push_cb( sh->cb_arg, io_batch, sts->workers_count == 0 );
-
-                    if( io_batch )
-                        soque_push( sh, io_batch );
-                }
+                while( queued );
 
                 soque_unlock( sh );
             }
