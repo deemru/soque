@@ -57,7 +57,7 @@ struct SOQUE
 
     CACHELINE_ALIGN( std::atomic_bool soque_pp_guard );
     CACHELINE_ALIGN( uint32_t q_push );
-    CACHELINE_ALIGN( std::atomic_uint32_t q_proc_run );
+    CACHELINE_ALIGN( std::atomic<uint32_t> q_proc_run );
     CACHELINE_ALIGN( uint32_t q_proc );
     CACHELINE_ALIGN( uint32_t q_pop );
     CACHELINE_ALIGN( uint32_t q_size );

@@ -1,13 +1,11 @@
 #include <windows.h>
+#include "soque_ver.rc"
 
 2 ICON "soque.ico"
 
-#define PCS_VERSION             1,16,03,22
-#define PCS_VERSION_STR         "512K\0"
-
 VS_VERSION_INFO VERSIONINFO
-FILEVERSION     PCS_VERSION
-PRODUCTVERSION  PCS_VERSION
+FILEVERSION     DATETIMEVERSION
+PRODUCTVERSION  DATETIMEVERSION
 FILEFLAGSMASK   VS_FFI_FILEFLAGSMASK
 //FILEFLAGS       0
 //FILEOS          VOS_NT_WINDOWS32
@@ -22,7 +20,7 @@ BEGIN
             VALUE "FileDescription", "Strict order queue framework\0"
             VALUE "LegalCopyright", "deemru\0"
             VALUE "ProductName", "soque\0"
-            VALUE "ProductVersion", PCS_VERSION_STR
+            VALUE "ProductVersion", "512K\0"
         END
     END
 
