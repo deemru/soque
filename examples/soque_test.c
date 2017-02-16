@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdint.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -20,7 +21,7 @@ unsigned long long proctsc = 0;
 #define rdtsc() __builtin_ia32_rdtsc()
 #endif
 
-static int SOQUE_CALL empty_soque_cb( void * arg, unsigned batch, char waitable )
+static uint32_t SOQUE_CALL empty_soque_cb( void * arg, uint32_t batch, uint8_t waitable )
 {
     (void)arg;
     (void)batch;
@@ -36,22 +37,20 @@ static int SOQUE_CALL empty_soque_cb( void * arg, unsigned batch, char waitable 
     return batch;
 }
 
-static void SOQUE_CALL empty_soque_proc_cb( void * arg, unsigned batch, unsigned index )
+static void SOQUE_CALL empty_soque_proc_cb( void * arg, SOQUE_BATCH proc_batch )
 {
     (void)arg;
-    (void)batch;
-    (void)index;
 
 #ifdef _WIN32
-    InterlockedExchangeAdd64( &g_proc_count, batch );
+    InterlockedExchangeAdd64( &g_proc_count, proc_batch.count );
 #else
-    __sync_fetch_and_add( &g_proc_count, batch );
+    __sync_fetch_and_add( &g_proc_count, proc_batch.count );
 #endif
 
     if( proctsc )
     {
         unsigned long long c = rdtsc();
-        unsigned long long h = proctsc * batch;
+        unsigned long long h = proctsc * proc_batch.count;
         while( rdtsc() - c < h ){}
     }
 }
