@@ -120,7 +120,7 @@ static uint8_t soque_load()
     }
 #endif
 
-    printf( "SUCCESS: %s (%d.%d) loaded\n", SOQUE_LIBRARY, soq->soque_major, soq->soque_minor );
+    printf( "SUCCESS: %s-%d.%d loaded\n", SOQUE_LIBRARY, soq->soque_major, soq->soque_minor );
 
     return 1;
 }
