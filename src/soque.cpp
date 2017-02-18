@@ -144,13 +144,12 @@ uint32_t SOQUE::push( uint32_t push_count )
 SOQUE_BATCH SOQUE::proc_get( uint32_t proc_count )
 {
     SOQUE_BATCH proc_batch;
-    uint32_t proc_here;
+    uint32_t proc_here = q_proc_run;
     uint32_t proc_next;
     uint32_t proc_max;
 
     do
     {
-        proc_here = q_proc_run;
         proc_max = q_push;
 
         if( proc_max == proc_here )
