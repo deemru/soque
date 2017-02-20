@@ -126,15 +126,16 @@ uint32_t SOQUE::push( uint32_t push_count )
     if( push_next >= q_size )
         push_next -= q_size;
 
+#ifdef _DEBUG
     for( uint32_t i = 0; i < push_count; i++ )
     {
         if( push_here + i == q_size )
             push_here -= q_size;
 
         assert( markers[push_here + i] == SOQUE_MARKER_EMPTY );
-
         markers[push_here + i] = SOQUE_MARKER_FILLED;
     }
+#endif
 
     q_push = push_next;
 
@@ -182,6 +183,7 @@ SOQUE_BATCH SOQUE::proc_get( uint32_t proc_count )
     proc_batch.index = proc_here;
     proc_batch.count = proc_count;
     
+#ifdef _DEBUG
     for( uint32_t i = 0; i < proc_count; i++ )
     {
         if( proc_here + i == q_size )
@@ -189,6 +191,7 @@ SOQUE_BATCH SOQUE::proc_get( uint32_t proc_count )
 
         assert( markers[proc_here + i] == SOQUE_MARKER_FILLED );
     }
+#endif
 
     return proc_batch;
 }
@@ -266,8 +269,9 @@ uint32_t SOQUE::pop( uint32_t pop_count )
         if( pop_here + i >= q_size )
             pop_here -= q_size;
 
+#ifdef _DEBUG
         assert( markers[pop_here + i] == SOQUE_MARKER_PROCESSED );
-
+#endif
         markers[pop_here + i] = SOQUE_MARKER_EMPTY;
     }
 

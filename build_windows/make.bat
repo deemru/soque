@@ -15,8 +15,8 @@ if "%DATETIMEVERSION%" == " " (
 
 ( echo #define DATETIMEVERSION %DATETIMEVERSION%) > soque_ver.rc
 
-cl /c /Ox /Os /GL /GF /GS- /W4 /EHsc ../src/soque.cpp
-cl /c /Ox /Os /GL /GF /GS- /W4 /EHsc /I../src ../examples/soque_test.c
+cl /c /O2 /GL /GS- /W4 /EHsc ../src/soque.cpp
+cl /c /O2 /GL /GS- /W4 /EHsc /I../src ../examples/soque_test.c
 rc -r soque.rc
 
 link /DLL /LTCG soque.obj soque.res /OUT:%OUT%.dll

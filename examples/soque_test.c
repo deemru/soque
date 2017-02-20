@@ -13,7 +13,7 @@
 #include "soque.h"
 
 static volatile long long g_proc_count;
-unsigned long long proctsc = 0;
+unsigned long long proctsc = 5000;
 
 #ifdef _WIN32
 #define rdtsc() __rdtsc()
@@ -76,8 +76,6 @@ int main( int argc, char ** argv )
     unsigned batch = 16;
     unsigned threshold = 10000;
     unsigned reaction = 100;
-    proctsc = 5000;
-
     long long speed_save;
     double speed_change;
     double speed_approx_change;
