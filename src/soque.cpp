@@ -4,7 +4,9 @@
 
 #include <stdlib.h>
 #include <math.h>
+#ifdef _DEBUG
 #include <assert.h>
+#endif
 #include <stdio.h>
 #include <string.h>
 #include <vector>
@@ -205,7 +207,9 @@ void SOQUE::proc_done( SOQUE_BATCH proc_batch )
         if( proc_here + i == q_size )
             proc_here -= q_size;
 
+#ifdef _DEBUG
         assert( markers[proc_here + i] == SOQUE_MARKER_FILLED );
+#endif
         markers[proc_here + i] = SOQUE_MARKER_PROCESSED;
     }
 }
