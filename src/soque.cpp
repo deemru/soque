@@ -337,9 +337,11 @@ struct SOQUE_THREADS
     uint32_t batch;
     uint32_t threshold;
     uint32_t reaction;
+    uint32_t lrt;
     std::atomic<uint32_t> threads_sync;
     std::vector<std::thread> threads;
-    std::vector<uint32_t> speed_meter;
+    std::vector<uint32_t> t_proc_meters;
+    std::vector<uint32_t> q_lrts;
 
     void sit_on_cpu( std::thread & thread )
     {
@@ -373,7 +375,8 @@ struct SOQUE_THREADS
         batch = 16;
         threshold = 10000;
         reaction = 100;
-        speed_meter.resize( threads_count );
+        t_proc_meters.resize( threads_count );
+        q_lrts.resize( threads_count );
 
         for( uint32_t i = 0; i < sh_count; i++ )
             soques_handles.push_back( sh[i] );
@@ -392,6 +395,7 @@ struct SOQUE_THREADS
         return 1;
     }
 
+
     static void orchestra_thread( SOQUE_THREADS * sts )
     {
         uint32_t count = sts->threads_count;
@@ -399,31 +403,31 @@ struct SOQUE_THREADS
         std::vector<uint32_t> proc_meter_last;
         uint32_t workers_count;
 
-        proc_meter_last.resize( count );        
+        proc_meter_last.resize( count );
         std::chrono::high_resolution_clock::time_point time_last = std::chrono::high_resolution_clock::now();
 
         for( ; !sts->shutdown; )
         {
             std::this_thread::sleep_for( std::chrono::milliseconds( sts->reaction ) );
-
             std::chrono::high_resolution_clock::time_point time_now = std::chrono::high_resolution_clock::now();
             std::chrono::duration<double> time_span = std::chrono::duration_cast<std::chrono::duration<double>>( time_now - time_last );
-
             time_last = time_now;
+
             workers_count = 0;
 
             for( i = 0; i < count; i++ )
             {
-                uint32_t speed_point = sts->speed_meter[i];
-                uint32_t speed = (uint32_t)( ( speed_point - proc_meter_last[i] ) / time_span.count() );
+                uint32_t speed_meter = sts->t_proc_meters[i];
+                uint32_t speed = (uint32_t)( ( speed_meter - proc_meter_last[i] ) / time_span.count() );
                  
                 if( speed > sts->threshold || ( workers_count == 0 && speed > sts->threshold / 100 ) )
                     workers_count++;
 
-                proc_meter_last[i] = speed_point;
+                proc_meter_last[i] = speed_meter;
             }
 
             sts->workers_count = workers_count;
+            sts->lrt++;
         }
     }
 
@@ -438,8 +442,9 @@ struct SOQUE_THREADS
     {
         uint32_t soques_count = sts->soques_count;
         SOQUE_HANDLE * soques_handles = &sts->soques_handles[0];
-        uint32_t * proc_meter = &sts->speed_meter[thread_id];
-        uint32_t proc_meter_cache = *proc_meter;
+        uint32_t * t_proc_meter = &sts->t_proc_meters[thread_id];
+        uint32_t proc_meter = *t_proc_meter;
+        uint32_t * q_lrts = &sts->q_lrts[0];
         uint32_t wake_point = thread_id < soques_count ? 0 : thread_id - soques_count + 1;
 
         sts->syncstart();
@@ -458,45 +463,45 @@ struct SOQUE_THREADS
 
                     soque_proc_done( sh, proc_batch );
 
-                    proc_meter_cache += proc_batch.count;
-                    *proc_meter = proc_meter_cache;
+                    proc_meter += proc_batch.count;
+                    *t_proc_meter = proc_meter;
                 }
             }
 
             // POP + PUSH
             if( soque_pp_enter( sh ) )
             {
-                uint32_t queued;
-
-                do
+                // POP
                 {
-                    // POP
+                    uint32_t queued = soque_pop( sh, 0 );
+
+                    if( queued )
                     {
-                        queued = soque_pop( sh, 0 );
+                        uint32_t popped = sh->pop_cb( sh->cb_arg, queued, sts->lrt - q_lrts[i] > 1 );
 
-                        if( queued )
+                        if( popped )
                         {
-                            uint32_t popped = sh->pop_cb( sh->cb_arg, queued, sts->workers_count == 0 );
-
-                            if( popped )
-                                soque_pop( sh, popped );
-                        }
-                    }
-
-                    // PUSH
-                    {
-                        uint32_t available = soque_push( sh, 0 );
-
-                        if( available )
-                        {
-                            uint32_t pushed = sh->push_cb( sh->cb_arg, available, queued == 0 && sts->workers_count == 0 );
-
-                            if( pushed )
-                                soque_push( sh, pushed );
+                            soque_pop( sh, popped );
+                            q_lrts[i] = sts->lrt;
                         }
                     }
                 }
-                while( queued );
+
+                // PUSH
+                {
+                    uint32_t available = soque_push( sh, 0 );
+
+                    if( available )
+                    {
+                        uint32_t pushed = sh->push_cb( sh->cb_arg, available, sts->lrt - q_lrts[i] > 1 );
+
+                        if( pushed )
+                        {
+                            soque_push( sh, pushed );
+                            q_lrts[i] = sts->lrt;
+                        }
+                    }
+                }
 
                 soque_pp_leave( sh );
             }
@@ -505,8 +510,9 @@ struct SOQUE_THREADS
             {
                 i = 0;
 
-                if( wake_point && sts->workers_count < wake_point )
-                    std::this_thread::sleep_for( std::chrono::milliseconds( sts->reaction ) );
+                if( wake_point )
+                    while( sts->workers_count < wake_point )
+                        std::this_thread::sleep_for( std::chrono::milliseconds( sts->reaction ) );
             }
         }
     }
