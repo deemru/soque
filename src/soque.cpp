@@ -145,12 +145,14 @@ uint32_t SOQUE::push( uint32_t push_count )
 SOQUE_BATCH SOQUE::proc_get( uint32_t proc_count )
 {
     SOQUE_BATCH proc_batch;
-    uint32_t proc_here = q_proc_run;
+    uint32_t proc_here;
     uint32_t proc_next;
     uint32_t proc_max;
+    uint32_t proc_run = q_proc_run;
 
     do
     {
+        proc_here = proc_run % q_size;
         proc_max = q_push;
 
         if( proc_max == proc_here )
@@ -173,13 +175,11 @@ SOQUE_BATCH SOQUE::proc_get( uint32_t proc_count )
         if( proc_count > proc_max )
             proc_count = proc_max;
 
-        proc_next = proc_here + proc_count;
-
-        if( proc_next >= q_size )
-            proc_next -= q_size;
+        proc_next = proc_run + proc_count;
     }
-    while( !q_proc_run.compare_exchange_weak( proc_here, proc_next ) );
+    while( !q_proc_run.compare_exchange_weak( proc_run, proc_next ) );
 
+    proc_here = proc_run % q_size;
     proc_batch.index = proc_here;
     proc_batch.count = proc_count;
     
@@ -205,6 +205,7 @@ void SOQUE::proc_done( SOQUE_BATCH proc_batch )
         if( proc_here + i == q_size )
             proc_here -= q_size;
 
+        assert( markers[proc_here + i] == SOQUE_MARKER_FILLED );
         markers[proc_here + i] = SOQUE_MARKER_PROCESSED;
     }
 }
@@ -218,12 +219,12 @@ uint32_t SOQUE::pop( uint32_t pop_count )
     // finish q_proc
     {
         uint32_t proc_next = q_proc;
-        uint32_t proc_run = q_proc_run;
+        uint32_t push_max = q_push;
         uint8_t isproc = 0;
 
         for( ;; )
         {
-            if( proc_next == proc_run )
+            if( proc_next == push_max )
                 break;
 
             if( markers[proc_next] != SOQUE_MARKER_PROCESSED )
@@ -282,6 +283,9 @@ uint32_t SOQUE::pop( uint32_t pop_count )
 
 SOQUE_HANDLE SOQUE_CALL soque_open( uint32_t size, void * cb_arg, soque_push_cb push_cb, soque_proc_cb proc_cb, soque_pop_cb pop_cb )
 {
+    if( ( ( (uint32_t)-1 ) % size ) != size - 1 )
+        return NULL;
+
     void * mem = malloc( sizeof( SOQUE ) + sizeof( uint8_t ) * size + CACHELINE_SIZE );
 
     if( !mem )
