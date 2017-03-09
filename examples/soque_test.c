@@ -1,3 +1,4 @@
+#ifndef ESPIO_WITH_SOQUE
 #include <stdio.h>
 #include <stdint.h>
 
@@ -58,6 +59,7 @@ static void SOQUE_CALL empty_soque_proc_cb( void * arg, SOQUE_BATCH proc_batch )
 static soque_push_cb push_cb = &empty_soque_cb;
 static soque_proc_cb proc_cb = &empty_soque_proc_cb;
 static soque_pop_cb pop_cb = &empty_soque_cb;
+static void ** cb_arg;
 
 #ifdef _WIN32
 #define SLEEP_1_SEC Sleep( 1000 )
@@ -66,6 +68,7 @@ static soque_pop_cb pop_cb = &empty_soque_cb;
 #endif
 
 int main( int argc, char ** argv )
+#endif // ESPIO_WITH_SOQUE
 {
     SOQUE_HANDLE * q;
     SOQUE_THREADS_HANDLE qt;
@@ -117,11 +120,20 @@ int main( int argc, char ** argv )
     printf( "INFO: threshold = %d\n", threshold );
     printf( "INFO: reaction = %d\n", reaction );
     printf( "INFO: proctsc = %d\n\n", (int)proctsc );
-    
+
+    cb_arg = malloc( queue_count * sizeof( void * ) );   
     q = malloc( queue_count * sizeof( void * ) );
 
     for( i = 0; i < queue_count; i++ )
-        q[i] = soq->soque_open( queue_size, NULL, push_cb, proc_cb, pop_cb );
+    {
+#ifdef ESPIO_WITH_SOQUE
+        cb_arg[i] = malloc( sizeof( ESPIO_SOQUE_ARG ) );
+        espio_soque_init( (ESPIO_SOQUE_ARG *)cb_arg[i], eio->espio_open( "output_X", "input_X", threads_count ), queue_size, proctsc, 1 );
+#else
+        cb_arg[i] = NULL;
+#endif
+        q[i] = soq->soque_open( queue_size, cb_arg[i], push_cb, proc_cb, pop_cb );
+    }
 
     qt = soq->soque_threads_open( threads_count, bind, q, queue_count );
     soq->soque_threads_tune( qt, batch, threshold, reaction );
@@ -136,7 +148,11 @@ int main( int argc, char ** argv )
         speed_approx_change = speed_approx;
         speed_moment = (double)( g_proc_count - speed_save );
         speed_approx = ( speed_approx * n + speed_moment ) / ( n + 1 );
-        printf( "Mpps:   %.03f (%s%0.03f)   ~   %.03f (%s%0.03f)\n", 
+#ifdef ESPIO_WITH_SOQUE
+        printf( "Gbps:   %.03f (%s%0.03f)   ~   %.03f (%s%0.03f)\n",
+#else
+        printf( "Mpps:   %.03f (%s%0.03f)   ~   %.03f (%s%0.03f)\n",
+#endif
                 speed_moment / 1000000,
                 speed_change <= speed_moment ? "+" : "",
                 ( speed_moment - speed_change ) / 1000000,
