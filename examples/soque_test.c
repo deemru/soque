@@ -149,7 +149,7 @@ int main( int argc, char ** argv )
         speed_moment = (double)( g_proc_count - speed_save );
         speed_approx = ( speed_approx * n + speed_moment ) / ( n + 1 );
 #ifdef ESPIO_WITH_SOQUE
-        printf( "Gbps:   %.03f (%s%0.03f)   ~   %.03f (%s%0.03f)\n",
+        printf( "Mbps:   %.03f (%s%0.03f)   ~   %.03f (%s%0.03f)\n",
 #else
         printf( "Mpps:   %.03f (%s%0.03f)   ~   %.03f (%s%0.03f)\n",
 #endif
