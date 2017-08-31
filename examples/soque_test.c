@@ -133,6 +133,12 @@ int main( int argc, char ** argv )
         cb_arg[i] = NULL;
 #endif
         q[i] = soq->soque_open( queue_size, cb_arg[i], push_cb, proc_cb, pop_cb );
+
+        if( q[i] == NULL )
+        {
+            printf( "ERROR: soque_open = NULL\n\n" );
+            return 1;
+        }
     }
 
     qt = soq->soque_threads_open( threads_count, bind, q, queue_count );

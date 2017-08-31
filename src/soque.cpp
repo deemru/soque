@@ -129,13 +129,22 @@ uint32_t SOQUE::push( uint32_t push_count )
         push_next -= q_size;
 
 #ifdef _DEBUG
-    for( uint32_t i = 0; i < push_count; i++ )
+    if( push_count )
     {
-        if( push_here + i == q_size )
-            push_here -= q_size;
+        uint32_t i = push_here;
+        uint32_t c = push_count;
 
-        assert( markers[push_here + i] == SOQUE_MARKER_EMPTY );
-        markers[push_here + i] = SOQUE_MARKER_FILLED;
+        for( ;; )
+        {
+            assert( markers[i] == SOQUE_MARKER_EMPTY );
+            markers[i] = SOQUE_MARKER_FILLED;
+
+            if( --c == 0 )
+                break;
+
+            if( ++i == q_size )
+                i = 0;
+        }
     }
 #endif
 
@@ -168,12 +177,6 @@ SOQUE_BATCH SOQUE::proc_get( uint32_t proc_count )
         else
             proc_max = q_size + proc_max - proc_here;
 
-        if( proc_count == 0 )
-        {
-            proc_batch.count = proc_max;
-            return proc_batch;
-        }
-
         if( proc_count > proc_max )
             proc_count = proc_max;
 
@@ -186,12 +189,21 @@ SOQUE_BATCH SOQUE::proc_get( uint32_t proc_count )
     proc_batch.count = proc_count;
     
 #ifdef _DEBUG
-    for( uint32_t i = 0; i < proc_count; i++ )
+    if( proc_count )
     {
-        if( proc_here + i == q_size )
-            proc_here -= q_size;
+        uint32_t i = proc_here;
+        uint32_t c = proc_count;
 
-        assert( markers[proc_here + i] == SOQUE_MARKER_FILLED );
+        for( ;; )
+        {
+            assert( markers[i] == SOQUE_MARKER_FILLED );
+
+            if( --c == 0 )
+                break;
+
+            if( ++i == q_size )
+                i = 0;
+        }
     }
 #endif
 
@@ -200,17 +212,24 @@ SOQUE_BATCH SOQUE::proc_get( uint32_t proc_count )
 
 void SOQUE::proc_done( SOQUE_BATCH proc_batch )
 {
-    uint32_t proc_here = proc_batch.index;
-
-    for( uint32_t i = 0; i < proc_batch.count; i++ )
+    if( proc_batch.count )
     {
-        if( proc_here + i == q_size )
-            proc_here -= q_size;
+        uint32_t i = proc_batch.index;
+        uint32_t c = proc_batch.count;
 
+        for( ;; )
+        {
 #ifdef _DEBUG
-        assert( markers[proc_here + i] == SOQUE_MARKER_FILLED );
+            assert( markers[i] == SOQUE_MARKER_FILLED );
 #endif
-        markers[proc_here + i] = SOQUE_MARKER_PROCESSED;
+            markers[i] = SOQUE_MARKER_PROCESSED;
+
+            if( --c == 0 )
+                break;
+
+            if( ++i == q_size )
+                i = 0;
+        }
     }
 }
 
@@ -222,9 +241,9 @@ uint32_t SOQUE::pop( uint32_t pop_count )
 
     // finish q_proc
     {
-        uint32_t proc_next = q_proc;
+        uint32_t proc_now = q_proc;
+        uint32_t proc_next = proc_now;
         uint32_t push_max = q_push;
-        uint8_t isproc = 0;
 
         for( ;; )
         {
@@ -234,15 +253,11 @@ uint32_t SOQUE::pop( uint32_t pop_count )
             if( markers[proc_next] != SOQUE_MARKER_PROCESSED )
                 break;
 
-            proc_next = proc_next + 1;
-
-            if( proc_next == q_size )
+            if( ++proc_next == q_size )
                 proc_next = 0;
-            
-            isproc = 1;
         }
 
-        if( isproc )
+        if( proc_next != proc_now )
             q_proc = proc_next;
 
         pop_max = proc_next;
@@ -269,15 +284,24 @@ uint32_t SOQUE::pop( uint32_t pop_count )
     if( pop_next >= q_size )
         pop_next -= q_size;
 
-    for( uint32_t i = 0; i < pop_count; i++ )
+    if( pop_count )
     {
-        if( pop_here + i >= q_size )
-            pop_here -= q_size;
+        uint32_t i = pop_here;
+        uint32_t c = pop_count;
 
+        for( ;; )
+        {
 #ifdef _DEBUG
-        assert( markers[pop_here + i] == SOQUE_MARKER_PROCESSED );
+            assert( markers[i] == SOQUE_MARKER_PROCESSED );
 #endif
-        markers[pop_here + i] = SOQUE_MARKER_EMPTY;
+            markers[i] = SOQUE_MARKER_EMPTY;
+
+            if( --c == 0 )
+                break;
+
+            if( ++i == q_size )
+                i = 0;
+        }
     }
 
     q_pop = pop_next;
@@ -493,7 +517,11 @@ struct SOQUE_THREADS
 
                         if( popped )
                         {
+#ifdef _DEBUG
+                            assert( popped == soque_pop( sh, popped ) );
+#else
                             soque_pop( sh, popped );
+#endif
                             q_lrts[i] = sts->lrt;
                         }
                     }
@@ -509,7 +537,11 @@ struct SOQUE_THREADS
 
                         if( pushed )
                         {
+#ifdef _DEBUG
+                            assert( pushed == soque_push( sh, pushed ) );
+#else
                             soque_push( sh, pushed );
+#endif
                             q_lrts[i] = sts->lrt;
                         }
                     }
